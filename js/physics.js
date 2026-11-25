@@ -1,5 +1,3 @@
-// js/physics.js //
-
 "use strict";
 
 const game = {
@@ -14,6 +12,7 @@ const game = {
   score: 0,
   shakeTimer: 0,
   fadeTimer: 0,
+  victoryWalkTimer: 0,
   camX: 0,
   camY: 0,
   aimWorldX: 300,
@@ -29,7 +28,8 @@ const hero = {
   vx: 0, vy: 0, facing: 1, aimAngle: 0,
   grounded: false, onLadder: false, dropThroughTimer: 0,
   hp: 100, maxHp: 100, invulnTimer: 0,
-  gunCooldown: 0, bones: 0,
+  gunCooldown: 0, gunBurstRemaining: 0, gunReloadTimer: 0,
+  bones: 0,
   hasMissileHat: false, hatCooldown: 0, hatMaxCooldown: 4.5,
   asthma: 0, asthmaStun: 0, asthmaPending: false,
   animState: "IDLE", animTimer: 0,
@@ -90,6 +90,7 @@ function stepHero(input, scr) {
 
   if (hero.invulnTimer > 0) hero.invulnTimer = Math.max(0, hero.invulnTimer - DT);
   if (hero.gunCooldown > 0) hero.gunCooldown = Math.max(0, hero.gunCooldown - DT);
+  if (hero.gunReloadTimer > 0) hero.gunReloadTimer = Math.max(0, hero.gunReloadTimer - DT);
   if (hero.hatCooldown > 0) hero.hatCooldown = Math.max(0, hero.hatCooldown - DT);
   if (hero.dropThroughTimer > 0) hero.dropThroughTimer = Math.max(0, hero.dropThroughTimer - DT);
 
@@ -200,15 +201,25 @@ function stepHero(input, scr) {
     hero.animTimer = 0;
   }
 
-  const spreadAngle = hero.traits.tremor ? (Math.random() - 0.5) * hero.stats.spreadRad : 0;
-  const fireAngle = hero.aimAngle + spreadAngle;
-  const dirX = Math.cos(fireAngle);
-  const dirY = Math.sin(fireAngle);
-  const muzzleX = shoulderX + dirX * 18;
-  const muzzleY = shoulderY + dirY * 18;
+  // 7-round burst mode + 0.4s reload cycle
+  if (hero.gunBurstRemaining === 0 && hero.gunReloadTimer <= 0 && input.gunHeld) {
+    hero.gunBurstRemaining = 7;
+  }
 
-  if (input.gunHeld && hero.gunCooldown <= 0) {
-    hero.gunCooldown = 0.11;
+  if (hero.gunBurstRemaining > 0 && hero.gunCooldown <= 0) {
+    const spreadAngle = hero.traits.tremor ? (Math.random() - 0.5) * hero.stats.spreadRad : 0;
+    const fireAngle = hero.aimAngle + spreadAngle;
+    const dirX = Math.cos(fireAngle);
+    const dirY = Math.sin(fireAngle);
+    const muzzleX = shoulderX + dirX * 18;
+    const muzzleY = shoulderY + dirY * 18;
+
+    hero.gunCooldown = 0.045; // high burst fire rate (~22 rps)
+    hero.gunBurstRemaining--;
+    if (hero.gunBurstRemaining === 0) {
+      hero.gunReloadTimer = 0.40; // 0.4s mandatory reload pause before next burst
+    }
+
     const bulletSpeed = hero.stats.bulletSpeed;
     game.bullets.push({
       x: muzzleX, y: muzzleY,
@@ -217,10 +228,14 @@ function stepHero(input, scr) {
       dropStartDist: HALF_W * hero.stats.bulletDropRatio,
       damage: 10
     });
-    SFX.beep(780, 0.045, "square", 0.05, 320);
+    SFX.beep(840, 0.035, "square", 0.05, 340);
   }
 
   if (input.bonePressed && hero.bones > 0) {
+    const dirX = Math.cos(hero.aimAngle);
+    const dirY = Math.sin(hero.aimAngle);
+    const muzzleX = shoulderX + dirX * 18;
+    const muzzleY = shoulderY + dirY * 18;
     hero.bones--;
     const boneSpeed = 480;
     game.bones.push({
@@ -233,6 +248,8 @@ function stepHero(input, scr) {
   }
 
   if (input.hatPressed && hero.hasMissileHat && hero.hatCooldown <= 0) {
+    const dirX = Math.cos(hero.aimAngle);
+    const dirY = Math.sin(hero.aimAngle);
     hero.hatCooldown = hero.hatMaxCooldown;
     game.missiles.push({
       x: shoulderX, y: hero.y - 4,
@@ -310,12 +327,9 @@ function stepProjectilesAndPickups(scr) {
         spawnParticles(p.x + p.w / 2, p.y + p.h / 2, "#dc2626", 10, 140);
         SFX.beep(660, 0.14, "sine", 0.1, 1040);
       } else if (p.type === "treasure") {
-        const diffBonus = setup.difficulty === "ULTIMATE" ? 6000 : (setup.difficulty === "HARD" ? 3000 : 1000);
-        game.score += 2000 + diffBonus + Math.floor(game.stageTimer) * 5;
-        spawnParticles(p.x + p.w / 2, p.y + p.h / 2, "#ffd700", 24, 220);
-        SFX.beep(523, 0.4, "square", 0.12, 1046);
-        game.state = "VICTORY";
-        SFX.syncBgm();
+        game.score += 1500;
+        spawnParticles(p.x + p.w / 2, p.y + p.h / 2, "#ffd700", 20, 200);
+        SFX.beep(523, 0.25, "square", 0.12, 1046);
       }
     }
   }
