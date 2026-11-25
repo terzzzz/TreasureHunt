@@ -1,5 +1,3 @@
-//js/main.js//
-
 "use strict";
 
 function loadScreenByIndex(idx) {
@@ -70,8 +68,16 @@ function loadScreenByIndex(idx) {
 function advanceToNextScreen() {
   const nextIdx = game.screenIdx + 1;
   if (nextIdx >= stageManager.data.screens.length) {
-    game.state = "VICTORY";
+    const diffBonus = setup.difficulty === "ULTIMATE" ? 6000 : (setup.difficulty === "HARD" ? 3000 : 1000);
+    game.score += 2000 + diffBonus + Math.floor(game.stageTimer) * 5;
+    game.state = "VICTORY_WALK";
+    game.victoryWalkTimer = 1.65;
+    hero.facing = 1;
+    hero.onLadder = false;
+    hero.asthmaStun = 0;
+    hero.animState = "RUN";
     SFX.syncBgm();
+    SFX.playVictoryFanfare();
     return;
   }
   game.state = "SCREEN_FADE";
@@ -93,6 +99,7 @@ function startStageWithSelectedTraits() {
   game.elapsedTime = 0;
   game.stageTimer = stageManager.data.timeLimit || 600;
   game.score = 0;
+  game.victoryWalkTimer = 0;
   inputDelayBuffer.length = 0;
   prevEffectiveInput = {
     left: false, right: false, up: false, down: false,
@@ -101,7 +108,9 @@ function startStageWithSelectedTraits() {
 
   Object.assign(hero, {
     hp: computed.maxHp, maxHp: computed.maxHp,
-    invulnTimer: 0, gunCooldown: 0, bones: 0,
+    invulnTimer: 0,
+    gunCooldown: 0, gunBurstRemaining: 0, gunReloadTimer: 0,
+    bones: 0,
     hasMissileHat: false, hatCooldown: 0,
     asthma: 0, asthmaStun: 0, asthmaPending: false,
     animState: "IDLE", animTimer: 0
@@ -119,6 +128,7 @@ function returnToCharSelect() {
   game.elapsedTime = 0;
   game.shakeTimer = 0;
   game.fadeTimer = 0;
+  game.victoryWalkTimer = 0;
 
   game.bullets.length = 0;
   game.bones.length = 0;
@@ -144,6 +154,21 @@ function updateTick() {
   if (game.state === "SCREEN_FADE") {
     game.fadeTimer -= DT;
     if (game.fadeTimer <= 0) game.state = "PLAY";
+    return;
+  }
+
+  if (game.state === "VICTORY_WALK") {
+    game.elapsedTime += DT;
+    game.victoryWalkTimer -= DT;
+    hero.facing = 1;
+    hero.animState = "RUN";
+    hero.animTimer += DT * 11;
+    hero.x += Math.max(130, hero.stats.walkSpeed) * DT;
+    stepParticles();
+
+    if (game.victoryWalkTimer <= 0 || hero.x > game.worldW + 40) {
+      game.state = "VICTORY";
+    }
     return;
   }
 
