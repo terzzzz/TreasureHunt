@@ -1,3 +1,5 @@
+// js/render.js// 
+
 "use strict";
 
 function getDeviceDateTimeStrings() {
