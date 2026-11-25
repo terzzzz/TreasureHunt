@@ -1,19 +1,28 @@
-//js/assets.js //
-
+// js/assets.js //
 "use strict";
 
 function loadKeyedSprite(src, keyWhiteBg = true, eraseOriginalGun = false) {
   const entry = { img: new Image(), canvas: null, loaded: false };
   entry.img.onload = () => {
-    try {
-      const w = entry.img.naturalWidth;
-      const h = entry.img.naturalHeight;
-      const off = document.createElement("canvas");
-      off.width = w;
-      off.height = h;
-      const octx = off.getContext("2d");
-      octx.drawImage(entry.img, 0, 0);
+    const w = entry.img.naturalWidth;
+    const h = entry.img.naturalHeight;
+    const off = document.createElement("canvas");
+    off.width = w;
+    off.height = h;
+    const octx = off.getContext("2d");
+    octx.drawImage(entry.img, 0, 0);
 
+    // Erase the static hand-drawn machine gun BEFORE getImageData (works even on file://)
+    if (eraseOriginalGun) {
+      octx.clearRect(
+        Math.floor(w * 0.56),
+        Math.floor(h * 0.24),
+        Math.ceil(w * 0.44),
+        Math.ceil(h * 0.46)
+      );
+    }
+
+    try {
       if (keyWhiteBg) {
         const imgData = octx.getImageData(0, 0, w, h);
         const d = imgData.data;
@@ -28,23 +37,12 @@ function loadKeyedSprite(src, keyWhiteBg = true, eraseOriginalGun = false) {
         }
         octx.putImageData(imgData, 0, 0);
       }
-
-      // Erase the static hand-drawn machine gun extending right from the torso
-      if (eraseOriginalGun) {
-        octx.clearRect(
-          Math.floor(w * 0.62),
-          Math.floor(h * 0.28),
-          Math.ceil(w * 0.38),
-          Math.ceil(h * 0.38)
-        );
-      }
-
-      entry.canvas = off;
-      entry.loaded = true;
     } catch (_) {
-      entry.canvas = null;
-      entry.loaded = true;
+      // Even if file:// blocks getImageData, offscreen canvas still keeps clearRect applied
     }
+
+    entry.canvas = off;
+    entry.loaded = true;
   };
   entry.img.onerror = () => { entry.loaded = false; };
   entry.img.src = src;
@@ -70,11 +68,11 @@ const CHAR_LAYERS = {
 };
 
 const TRAIT_BODY_ZONES = {
-  blind:      [0.24, 0.04, 0.56, 0.25],
-  deaf:       [0.14, 0.06, 0.48, 0.26],
-  asthma:     [0.26, 0.26, 0.54, 0.26],
-  tremor:     [0.18, 0.34, 0.52, 0.34],
-  prosthesis: [0.16, 0.62, 0.72, 0.38]
+  blind:      [0.18, 0.02, 0.62, 0.36],
+  deaf:       [0.10, 0.04, 0.54, 0.36],
+  asthma:     [0.24, 0.34, 0.44, 0.32],
+  tremor:     [0.16, 0.36, 0.42, 0.34],
+  prosthesis: [0.16, 0.64, 0.72, 0.36]
 };
 
 const EXTRA_SPRITES = {
