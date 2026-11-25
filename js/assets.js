@@ -1,4 +1,3 @@
-// js/assets.js
 "use strict";
 
 function loadKeyedSprite(src, keyWhiteBg = true) {
@@ -148,6 +147,31 @@ const SFX = {
     gain.connect(this.ctx.destination);
     osc.start(t);
     osc.stop(t + dur);
+  },
+  playVictoryFanfare() {
+    if (this.muted || !this.ctx) return;
+    const deafMult = hero.traits.deaf ? (hero.stats?.sfxGainMultiplier ?? 0.30) : 1.0;
+    const notes = [
+      { f: 523.25, t: 0.00, d: 0.14 }, // C5
+      { f: 659.25, t: 0.14, d: 0.14 }, // E5
+      { f: 783.99, t: 0.28, d: 0.14 }, // G5
+      { f: 1046.5, t: 0.42, d: 0.32 }, // C6
+      { f: 783.99, t: 0.78, d: 0.16 }, // G5
+      { f: 1046.5, t: 0.96, d: 0.62 }  // C6 hold
+    ];
+    const now = this.ctx.currentTime;
+    for (const n of notes) {
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = "triangle";
+      osc.frequency.setValueAtTime(n.f * (hero.traits.deaf ? 0.85 : 1), now + n.t);
+      gain.gain.setValueAtTime(0.11 * deafMult, now + n.t);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + n.t + n.d);
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+      osc.start(now + n.t);
+      osc.stop(now + n.t + n.d);
+    }
   }
 };
 
