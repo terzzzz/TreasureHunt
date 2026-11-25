@@ -1,5 +1,4 @@
-// js/render.js// 
-
+// js/render.js //
 "use strict";
 
 function getDeviceDateTimeStrings() {
@@ -484,9 +483,9 @@ function drawLayeredCharacter(footX, footY, scaleFactor, activeTraits, timeSec, 
     ? opts.selectedOrder
     : TRAIT_ORDER.filter(id => activeTraits[id]);
 
-  // Subtle neck tilt toward cursor (-24 deg to +24 deg)
-  const rawHeadAngle = opts.showAimGun ? (opts.localAimAngle ?? 0) * 0.45 : 0;
-  const headAngle = Math.max(-0.42, Math.min(0.42, rawHeadAngle));
+  // Head tilt toward cursor (-43 deg to +43 deg)
+  const rawHeadAngle = opts.showAimGun ? (opts.localAimAngle ?? 0) * 0.65 : 0;
+  const headAngle = Math.max(-0.75, Math.min(0.75, rawHeadAngle));
 
   ctx.save();
   ctx.translate(footX, footY);
@@ -495,8 +494,8 @@ function drawLayeredCharacter(footX, footY, scaleFactor, activeTraits, timeSec, 
 
   const hasBaseSprite = CHAR_LAYERS.base.loaded;
   if (hasBaseSprite) {
-    // 1. Torso / middle body (33% to 68% height)
-    drawSpriteLayer(CHAR_LAYERS.base, -spriteW / 2, -spriteH, spriteW, spriteH, [0, 0.33, 1, 0.35]);
+    // 1. Torso / middle body (40% to 68% height)
+    drawSpriteLayer(CHAR_LAYERS.base, -spriteW / 2, -spriteH, spriteW, spriteH, [0, 0.40, 1, 0.28]);
 
     // 2. Animated lower legs (68% to 100% height)
     const legLayer = (activeTraits.prosthesis && CHAR_LAYERS.prosthesis.loaded)
@@ -514,13 +513,13 @@ function drawLayeredCharacter(footX, footY, scaleFactor, activeTraits, timeSec, 
       }
     }
 
-    // 4. Pivoting head (0% to 34% height) + head traits (blind, deaf) + missile hat
+    // 4. Pivoting head (0% to 40% height) + head traits (blind, deaf) + missile hat
     ctx.save();
-    ctx.translate(0, -44); // neck pivot
+    ctx.translate(0, -40); // neck pivot
     ctx.rotate(headAngle);
-    ctx.translate(0, 44);
+    ctx.translate(0, 40);
 
-    drawSpriteLayer(CHAR_LAYERS.base, -spriteW / 2, -spriteH, spriteW, spriteH, [0, 0, 1, 0.34]);
+    drawSpriteLayer(CHAR_LAYERS.base, -spriteW / 2, -spriteH, spriteW, spriteH, [0, 0, 1, 0.40]);
     for (const traitId of orderList) {
       if (!activeTraits[traitId] || (traitId !== "blind" && traitId !== "deaf")) continue;
       const layer = CHAR_LAYERS[traitId];
