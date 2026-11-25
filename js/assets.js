@@ -1,7 +1,7 @@
 // js/assets.js //
 "use strict";
 
-function loadKeyedSprite(src, keyWhiteBg = true, eraseOriginalGun = false) {
+function loadKeyedSprite(src, keyBg = true, eraseOriginalGun = false) {
   const entry = { img: new Image(), canvas: null, loaded: false };
   entry.img.onload = () => {
     const w = entry.img.naturalWidth;
@@ -12,33 +12,46 @@ function loadKeyedSprite(src, keyWhiteBg = true, eraseOriginalGun = false) {
     const octx = off.getContext("2d");
     octx.drawImage(entry.img, 0, 0);
 
-    // Erase the static hand-drawn machine gun BEFORE getImageData (works even on file://)
+    // Erase ONLY the protruding rifle barrel to the right of the chest/knee (x >= 0.65, y 0.36..0.56)
     if (eraseOriginalGun) {
       octx.clearRect(
-        Math.floor(w * 0.56),
-        Math.floor(h * 0.24),
-        Math.ceil(w * 0.44),
-        Math.ceil(h * 0.46)
+        Math.floor(w * 0.65),
+        Math.floor(h * 0.36),
+        Math.ceil(w * 0.35),
+        Math.ceil(h * 0.20)
       );
     }
 
     try {
-      if (keyWhiteBg) {
+      if (keyBg) {
         const imgData = octx.getImageData(0, 0, w, h);
         const d = imgData.data;
+        // Sample top-left corner pixel as background color (handles both pure white and #f5f1e6 paper)
+        const bgR = d[0], bgG = d[1], bgB = d[2];
         for (let i = 0; i < d.length; i += 4) {
+          if (d[i + 3] === 0) continue;
           const r = d[i], g = d[i + 1], b = d[i + 2];
-          if (r > 240 && g > 240 && b > 240) {
+          const dist = Math.hypot(r - bgR, g - bgG, b - bgB);
+          const isNearWhite = r > 235 && g > 235 && b > 235;
+          if (dist < 26 || isNearWhite) {
             d[i + 3] = 0;
-          } else if (r > 224 && g > 224 && b > 224) {
-            const minC = Math.min(r, g, b);
-            d[i + 3] = Math.max(0, Math.min(255, Math.round((240 - minC) * 15)));
+          } else if (dist < 44) {
+            d[i + 3] = Math.round(((dist - 26) / 18) * 255);
           }
         }
         octx.putImageData(imgData, 0, 0);
       }
     } catch (_) {
-      // Even if file:// blocks getImageData, offscreen canvas still keeps clearRect applied
+      // If file:// security blocks getImageData, paint the erased barrel box with the sprite's paper tone
+      if (eraseOriginalGun) {
+        octx.fillStyle = "#f5f1e6";
+        octx.fillRect(
+          Math.floor(w * 0.65),
+          Math.floor(h * 0.36),
+          Math.ceil(w * 0.35),
+          Math.ceil(h * 0.20)
+        );
+      }
     }
 
     entry.canvas = off;
@@ -68,10 +81,10 @@ const CHAR_LAYERS = {
 };
 
 const TRAIT_BODY_ZONES = {
-  blind:      [0.18, 0.02, 0.62, 0.36],
-  deaf:       [0.10, 0.04, 0.54, 0.36],
-  asthma:     [0.24, 0.34, 0.44, 0.32],
-  tremor:     [0.16, 0.36, 0.42, 0.34],
+  blind:      [0.18, 0.02, 0.56, 0.36],
+  deaf:       [0.10, 0.04, 0.50, 0.36],
+  asthma:     [0.24, 0.34, 0.40, 0.32],
+  tremor:     [0.16, 0.36, 0.46, 0.34],
   prosthesis: [0.16, 0.64, 0.72, 0.36]
 };
 
