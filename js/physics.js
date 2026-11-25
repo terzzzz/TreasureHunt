@@ -229,8 +229,8 @@ function stepHero(input, scr) {
       dropStartDist: HALF_W * hero.stats.bulletDropRatio,
       damage: 10
     });
-    // Softer, lower-volume burst shot
-    SFX.beep(640, 0.032, "triangle", 0.022, 240);
+    // Matched to jump volume (0.06) while keeping the softer triangle tone
+    SFX.beep(640, 0.036, "triangle", 0.06, 240);
   }
 
   if (input.bonePressed && hero.bones > 0) {
