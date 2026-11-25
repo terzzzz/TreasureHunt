@@ -1,5 +1,3 @@
-// js/render.js//
-
 "use strict";
 
 function getDeviceDateTimeStrings() {
@@ -129,21 +127,77 @@ function drawRuledPage(px, py, pageNum, isLeft) {
   ctx.fillText(String(pageNum), isLeft ? px + padX + 6 : px + HALF_W - padX - 18, footerY + 16);
 }
 
+function drawSubtleExitMark(scr) {
+  const exit = scr.exit;
+  if (!exit) return;
+
+  const isVault = Boolean(scr.isFinal || exit.label === "VAULT");
+  const pulse = 0.65 + Math.sin(game.elapsedTime * 5) * 0.30;
+  const wobble = Math.sin(game.elapsedTime * 5) * 3;
+  const cx = exit.x + exit.w / 2;
+
+  if (isVault) {
+    ctx.save();
+    // Hand-drawn stone/gold vault frame + "VAULT" header sign
+    ctx.strokeStyle = `rgba(180, 83, 9, ${pulse})`;
+    ctx.fillStyle = "rgba(254, 243, 199, 0.22)";
+    ctx.lineWidth = 2.5;
+    ctx.fillRect(exit.x, exit.y, exit.w, exit.h);
+    ctx.strokeRect(exit.x, exit.y, exit.w, exit.h);
+
+    ctx.fillStyle = "#1e293b";
+    ctx.fillRect(exit.x - 4, exit.y - 20, exit.w + 8, 17);
+    ctx.strokeStyle = "#facc15";
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(exit.x - 4, exit.y - 20, exit.w + 8, 17);
+
+    ctx.fillStyle = "#facc15";
+    ctx.font = "bold 11px monospace";
+    ctx.textAlign = "center";
+    ctx.fillText("VAULT", cx, exit.y - 8);
+
+    // Pulsing walk-in chevron inside vault doorway
+    ctx.strokeStyle = `rgba(217, 119, 6, ${pulse})`;
+    ctx.lineWidth = 2.4;
+    ctx.beginPath();
+    ctx.moveTo(cx - 4 + wobble, exit.y + exit.h - 32);
+    ctx.lineTo(cx + 3 + wobble, exit.y + exit.h - 26);
+    ctx.lineTo(cx - 4 + wobble, exit.y + exit.h - 20);
+    ctx.stroke();
+    ctx.restore();
+    return;
+  }
+
+  const isUp = exit.dir === "up" || (exit.w >= exit.h && exit.y < H * 0.72);
+  const cy = isUp ? (exit.y + exit.h * 0.5 + wobble) : (exit.y + exit.h - 26);
+  const offsetX = isUp ? 0 : wobble;
+
+  ctx.save();
+  ctx.translate(cx + offsetX, cy);
+  if (isUp) ctx.rotate(-Math.PI / 2);
+
+  ctx.strokeStyle = `rgba(30, 41, 59, ${pulse})`;
+  ctx.fillStyle = `rgba(217, 119, 6, ${pulse})`;
+  ctx.lineWidth = 2.4;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+
+  ctx.beginPath();
+  ctx.arc(-6, 0, 2.2, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.moveTo(0, -6);
+  ctx.lineTo(6, 0);
+  ctx.lineTo(0, 6);
+  ctx.stroke();
+
+  ctx.restore();
+}
+
 function drawScreenEntities(scr) {
   if (scr.exit) {
-    const pulse = 0.55 + Math.sin(game.elapsedTime * 6) * 0.35;
-    ctx.save();
-    ctx.strokeStyle = `rgba(22, 163, 74, ${pulse})`;
-    ctx.setLineDash([5, 4]);
-    ctx.lineWidth = 2;
-    ctx.strokeRect(scr.exit.x, scr.exit.y, scr.exit.w, scr.exit.h);
-    ctx.setLineDash([]);
-    ctx.fillStyle = "#15803d";
-    ctx.font = "bold 10px monospace";
-    ctx.textAlign = "center";
-    ctx.fillText(scr.exit.hint || "EXIT", scr.exit.x + scr.exit.w / 2, scr.exit.y - 6);
-    ctx.textAlign = "left";
-    ctx.restore();
+    drawSubtleExitMark(scr);
   }
 
   for (const p of scr.pickups) {
@@ -352,6 +406,73 @@ function drawSpriteLayer(layer, dx, dy, dw, dh, clipZone = null) {
   return true;
 }
 
+function drawAnimatedSpriteLegs(legLayer, spriteW, spriteH, animState, animTimer) {
+  const src = legLayer.canvas || legLayer.img;
+  const legTopRatio = 0.68;
+  const legY = -spriteH * (1 - legTopRatio);
+  const legH = spriteH * (1 - legTopRatio);
+
+  if (animState !== "RUN" && animState !== "CLIMB" && animState !== "JUMP") {
+    drawSpriteLayer(legLayer, -spriteW / 2, -spriteH, spriteW, spriteH, [0, legTopRatio, 1, 1 - legTopRatio]);
+    return;
+  }
+
+  const phase = animState === "JUMP" ? 0.9 : Math.sin(animTimer);
+  const strideX = phase * 5.5;
+  const liftLeft = animState === "JUMP" ? -2.5 : Math.max(0, -phase) * -3.5;
+  const liftRight = animState === "JUMP" ? -1.0 : Math.max(0, phase) * -3.5;
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(-spriteW / 2 + strideX, legY + liftLeft, spriteW * 0.52, legH + 4);
+  ctx.clip();
+  ctx.drawImage(src, -spriteW / 2 + strideX, -spriteH + liftLeft, spriteW, spriteH);
+  ctx.restore();
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(-strideX, legY + liftRight, spriteW * 0.52, legH + 4);
+  ctx.clip();
+  ctx.drawImage(src, -spriteW / 2 - strideX, -spriteH + liftRight, spriteW, spriteH);
+  ctx.restore();
+}
+
+function drawAimingGunArm(localAimAngle, hasGunRecoil, isTremor) {
+  const clampedAngle = Math.max(-1.25, Math.min(1.25, localAimAngle));
+  const jitter = isTremor ? Math.sin(game.elapsedTime * 55) * 0.06 : 0;
+
+  ctx.save();
+  ctx.translate(3, -34);
+  ctx.rotate(clampedAngle + jitter);
+
+  const recoilX = hasGunRecoil ? -2.5 : 0;
+
+  ctx.strokeStyle = "#1e293b";
+  ctx.lineWidth = isTremor ? 2.0 : 3.0;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(10 + recoilX, 0);
+  ctx.stroke();
+
+  ctx.fillStyle = "#0f172a";
+  ctx.fillRect(9 + recoilX, -2.5, 11, 3.6);
+  ctx.fillRect(8 + recoilX, 0, 3.5, 5.5);
+
+  if (hasGunRecoil) {
+    ctx.fillStyle = "#facc15";
+    ctx.beginPath();
+    ctx.moveTo(21 + recoilX, -1);
+    ctx.lineTo(27 + recoilX, -4);
+    ctx.lineTo(25 + recoilX, 0);
+    ctx.lineTo(28 + recoilX, 3);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  ctx.restore();
+}
+
 function drawLayeredCharacter(footX, footY, scaleFactor, activeTraits, timeSec, opts = {}) {
   const spriteW = 54;
   const spriteH = 66;
@@ -370,10 +491,15 @@ function drawLayeredCharacter(footX, footY, scaleFactor, activeTraits, timeSec, 
 
   const hasBaseSprite = CHAR_LAYERS.base.loaded;
   if (hasBaseSprite) {
-    drawSpriteLayer(CHAR_LAYERS.base, -spriteW / 2, -spriteH, spriteW, spriteH, null);
+    drawSpriteLayer(CHAR_LAYERS.base, -spriteW / 2, -spriteH, spriteW, spriteH, [0, 0, 1, 0.68]);
+
+    const legLayer = (activeTraits.prosthesis && CHAR_LAYERS.prosthesis.loaded)
+      ? CHAR_LAYERS.prosthesis
+      : CHAR_LAYERS.base;
+    drawAnimatedSpriteLegs(legLayer, spriteW, spriteH, animState, animTimer);
 
     for (const traitId of orderList) {
-      if (!activeTraits[traitId]) continue;
+      if (!activeTraits[traitId] || traitId === "prosthesis") continue;
       const layer = CHAR_LAYERS[traitId];
       const zone = TRAIT_BODY_ZONES[traitId] || null;
       if (layer && layer.loaded) {
@@ -381,14 +507,17 @@ function drawLayeredCharacter(footX, footY, scaleFactor, activeTraits, timeSec, 
       }
     }
   } else {
-    const swing = animState === "RUN" ? Math.sin(animTimer) * 6 : 0;
+    const swing = animState === "RUN" ? Math.sin(animTimer) * 7 : (animState === "CLIMB" ? Math.sin(animTimer) * 5 : 0);
+    const liftA = animState === "RUN" ? Math.max(0, -Math.sin(animTimer)) * -3 : 0;
+    const liftB = animState === "RUN" ? Math.max(0, Math.sin(animTimer)) * -3 : 0;
+
     ctx.strokeStyle = activeTraits.prosthesis ? "#94a3b8" : "#1e293b";
     ctx.lineWidth = activeTraits.tremor ? 1.5 : 2.6;
     ctx.beginPath();
     ctx.moveTo(0, -24);
-    ctx.lineTo(-7 + swing, 0);
+    ctx.lineTo(-7 + swing, liftA);
     ctx.moveTo(0, -24);
-    ctx.lineTo(7 - swing, 0);
+    ctx.lineTo(7 - swing, liftB);
     ctx.stroke();
 
     ctx.strokeStyle = "#1e293b";
@@ -413,6 +542,10 @@ function drawLayeredCharacter(footX, footY, scaleFactor, activeTraits, timeSec, 
       ctx.arc(-5, -47, 3, 0, Math.PI * 2);
       ctx.fill();
     }
+  }
+
+  if (opts.showAimGun) {
+    drawAimingGunArm(opts.localAimAngle ?? 0, opts.gunRecoil ?? false, activeTraits.tremor);
   }
 
   if (activeTraits.tremor) {
@@ -461,13 +594,20 @@ function drawHero() {
   const footX = hero.x + hero.w / 2 + climbBobX;
   const footY = hero.y + hero.h + pantY + runBobY + jumpSquashY;
 
+  const localAimAngle = hero.facing === 1
+    ? hero.aimAngle
+    : Math.atan2(Math.sin(hero.aimAngle), -Math.cos(hero.aimAngle));
+
   drawLayeredCharacter(footX, footY, 1.0, hero.traits, time, {
     facing: hero.facing,
     runTilt,
     animState: hero.animState,
     animTimer: hero.animTimer,
     hasMissileHat: hero.hasMissileHat,
-    selectedOrder: hero.stats.selectedOrder
+    selectedOrder: hero.stats.selectedOrder,
+    showAimGun: game.state === "PLAY",
+    localAimAngle,
+    gunRecoil: hero.gunCooldown > 0.02
   });
 
   if (hero.traits.asthma && (hero.asthma > 2 || hero.asthmaStun > 0)) {
@@ -538,23 +678,25 @@ function drawProjectilesAndAimMark() {
   }
   ctx.globalAlpha = 1;
 
-  const ax = game.aimWorldX;
-  const ay = game.aimWorldY;
-  ctx.save();
-  ctx.strokeStyle = hero.traits.tremor ? "#ea580c" : "#dc2626";
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.arc(ax, ay, 11, 0, Math.PI * 2);
-  ctx.moveTo(ax - 16, ay); ctx.lineTo(ax - 6, ay);
-  ctx.moveTo(ax + 6, ay);  ctx.lineTo(ax + 16, ay);
-  ctx.moveTo(ax, ay - 16); ctx.lineTo(ax, ay - 6);
-  ctx.moveTo(ax, ay + 6);  ctx.lineTo(ax, ay + 16);
-  ctx.stroke();
-  ctx.restore();
+  if (game.state === "PLAY") {
+    const ax = game.aimWorldX;
+    const ay = game.aimWorldY;
+    ctx.save();
+    ctx.strokeStyle = hero.gunReloadTimer > 0 ? "#94a3b8" : (hero.traits.tremor ? "#ea580c" : "#dc2626");
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(ax, ay, 11, 0, Math.PI * 2);
+    ctx.moveTo(ax - 16, ay); ctx.lineTo(ax - 6, ay);
+    ctx.moveTo(ax + 6, ay);  ctx.lineTo(ax + 16, ay);
+    ctx.moveTo(ax, ay - 16); ctx.lineTo(ax, ay - 6);
+    ctx.moveTo(ax, ay + 6);  ctx.lineTo(ax, ay + 16);
+    ctx.stroke();
+    ctx.restore();
+  }
 }
 
 function drawBlindSightMask() {
-  if (!hero.traits.blind || game.debug) return;
+  if (!hero.traits.blind || game.debug || game.state === "VICTORY_WALK") return;
 
   const sx = hero.x + hero.w / 2 - game.camX;
   const sy = hero.y + hero.h * 0.45 - game.camY;
@@ -590,40 +732,49 @@ function drawHUD() {
 
   ctx.font = "bold 13px monospace";
   ctx.fillStyle = "#ef4444";
-  ctx.fillText(`HP:`, 255, 17);
+  ctx.fillText(`HP:`, 245, 17);
   ctx.fillStyle = "#334155";
-  ctx.fillRect(280, 7, 80, 12);
+  ctx.fillRect(270, 7, 76, 12);
   ctx.fillStyle = "#22c55e";
-  ctx.fillRect(280, 7, Math.max(0, hero.hp * 0.8), 12);
+  ctx.fillRect(270, 7, Math.max(0, hero.hp * 0.76), 12);
+
+  if (hero.gunReloadTimer > 0) {
+    ctx.fillStyle = "#fb923c";
+    ctx.fillText(`GUN:RLD`, 354, 17);
+  } else {
+    ctx.fillStyle = "#38bdf8";
+    const roundsLeft = hero.gunBurstRemaining > 0 ? hero.gunBurstRemaining : 7;
+    ctx.fillText(`GUN:${roundsLeft}/7`, 354, 17);
+  }
 
   ctx.fillStyle = "#fef08a";
-  ctx.fillText(`BONE:${hero.bones}/4`, 370, 17);
+  ctx.fillText(`BN:${hero.bones}`, 424, 17);
 
   if (!hero.hasMissileHat) {
     ctx.fillStyle = "#94a3b8";
-    ctx.fillText(`HAT:--`, 452, 17);
+    ctx.fillText(`HAT:--`, 472, 17);
   } else if (hero.hatCooldown <= 0) {
     ctx.fillStyle = "#facc15";
-    ctx.fillText(`HAT:RDY`, 452, 17);
+    ctx.fillText(`HAT:RDY`, 472, 17);
   } else {
     ctx.fillStyle = "#fb923c";
-    ctx.fillText(`HAT:${hero.hatCooldown.toFixed(1)}`, 452, 17);
+    ctx.fillText(`HAT:${hero.hatCooldown.toFixed(1)}`, 472, 17);
   }
 
   const totalScreens = stageManager.data.screens.length;
   ctx.fillStyle = "#38bdf8";
-  ctx.fillText(`BG:${game.screenIdx + 1}/${totalScreens}`, 528, 17);
+  ctx.fillText(`BG:${game.screenIdx + 1}/${totalScreens}`, 544, 17);
 
   const mins = Math.floor(game.stageTimer / 60);
   const secs = Math.floor(game.stageTimer % 60).toString().padStart(2, "0");
   ctx.fillStyle = game.stageTimer < 60 ? "#f87171" : "#f8fafc";
-  ctx.fillText(`${mins}:${secs}`, 602, 17);
+  ctx.fillText(`${mins}:${secs}`, 616, 17);
 
   ctx.fillStyle = "#f8fafc";
-  ctx.fillText(`${game.score.toString().padStart(6, "0")}`, 654, 17);
+  ctx.fillText(`${game.score.toString().padStart(6, "0")}`, 666, 17);
 
   ctx.fillStyle = "#cbd5e1";
-  ctx.fillText(`[ESC]CHAR [M]BGM [F2]DBG`, 725, 17);
+  ctx.fillText(`[ESC]CHAR [M]BGM [F2]DBG`, 736, 17);
 
   if (game.debug && game.activeScreen) {
     const scr = game.activeScreen;
@@ -681,7 +832,7 @@ function drawHUD() {
     ctx.fillStyle = game.state === "VICTORY" ? "#facc15" : "#f87171";
     ctx.font = "bold 36px monospace";
     ctx.textAlign = "center";
-    ctx.fillText(game.state === "VICTORY" ? "STAGE 001 TREASURE FOUND!" : "TIME / HP EXHAUSTED", W / 2, H / 2 - 40);
+    ctx.fillText(game.state === "VICTORY" ? "VAULT REACHED — STAGE CLEAR!" : "TIME / HP EXHAUSTED", W / 2, H / 2 - 40);
     ctx.fillStyle = "#38bdf8";
     ctx.font = "bold 22px sans-serif";
     ctx.fillText(`${hero.identity.zhName} — ${hero.identity.enName} (${hero.identity.anchors}) [${setup.difficulty}]`, W / 2, H / 2 + 4);
@@ -709,7 +860,7 @@ function drawSelectScreen() {
 
   ctx.fillStyle = "#cbd5e1";
   ctx.font = "12px monospace";
-  ctx.fillText("ASDW MOVE/JUMP/LADDER  |  MOUSE AIM + L-CLICK GUN  |  R-CLICK BONE  |  F HAT MISSILE  |  ESC CHAR SELECT", W / 2, 68);
+  ctx.fillText("ASDW MOVE/JUMP/LADDER  |  MOUSE AIM + L-CLICK 7-BURST GUN  |  R-CLICK BONE  |  F HAT MISSILE  |  ESC CHAR SELECT", W / 2, 68);
 
   const diffBtns = [
     { id: "NORMAL",   label: "NORMAL (1) [N]",   x: W / 2 - 345, y: 82, w: 216, h: 34 },
@@ -813,7 +964,9 @@ function drawSelectScreen() {
     {
       facing: 1,
       showPuff: previewStats.active.asthma,
-      selectedOrder: previewStats.selectedOrder
+      selectedOrder: previewStats.selectedOrder,
+      showAimGun: true,
+      localAimAngle: -0.15
     }
   );
 
