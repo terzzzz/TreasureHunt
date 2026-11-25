@@ -1,3 +1,4 @@
+// js/physics.js //
 "use strict";
 
 const game = {
@@ -214,10 +215,10 @@ function stepHero(input, scr) {
     const muzzleX = shoulderX + dirX * 18;
     const muzzleY = shoulderY + dirY * 18;
 
-    hero.gunCooldown = 0.045; // high burst fire rate (~22 rps)
+    hero.gunCooldown = 0.045;
     hero.gunBurstRemaining--;
     if (hero.gunBurstRemaining === 0) {
-      hero.gunReloadTimer = 0.40; // 0.4s mandatory reload pause before next burst
+      hero.gunReloadTimer = 0.40;
     }
 
     const bulletSpeed = hero.stats.bulletSpeed;
@@ -228,7 +229,8 @@ function stepHero(input, scr) {
       dropStartDist: HALF_W * hero.stats.bulletDropRatio,
       damage: 10
     });
-    SFX.beep(840, 0.035, "square", 0.05, 340);
+    // Softer, lower-volume burst shot
+    SFX.beep(640, 0.032, "triangle", 0.022, 240);
   }
 
   if (input.bonePressed && hero.bones > 0) {
