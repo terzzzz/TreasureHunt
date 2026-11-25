@@ -138,7 +138,6 @@ function drawSubtleExitMark(scr) {
 
   if (isVault) {
     ctx.save();
-    // Hand-drawn stone/gold vault frame + "VAULT" header sign
     ctx.strokeStyle = `rgba(180, 83, 9, ${pulse})`;
     ctx.fillStyle = "rgba(254, 243, 199, 0.22)";
     ctx.lineWidth = 2.5;
@@ -156,7 +155,6 @@ function drawSubtleExitMark(scr) {
     ctx.textAlign = "center";
     ctx.fillText("VAULT", cx, exit.y - 8);
 
-    // Pulsing walk-in chevron inside vault doorway
     ctx.strokeStyle = `rgba(217, 119, 6, ${pulse})`;
     ctx.lineWidth = 2.4;
     ctx.beginPath();
@@ -484,6 +482,10 @@ function drawLayeredCharacter(footX, footY, scaleFactor, activeTraits, timeSec, 
     ? opts.selectedOrder
     : TRAIT_ORDER.filter(id => activeTraits[id]);
 
+  // Subtle neck tilt toward cursor (-24 deg to +24 deg)
+  const rawHeadAngle = opts.showAimGun ? (opts.localAimAngle ?? 0) * 0.45 : 0;
+  const headAngle = Math.max(-0.42, Math.min(0.42, rawHeadAngle));
+
   ctx.save();
   ctx.translate(footX, footY);
   ctx.scale(facing * scaleFactor, scaleFactor);
@@ -491,21 +493,47 @@ function drawLayeredCharacter(footX, footY, scaleFactor, activeTraits, timeSec, 
 
   const hasBaseSprite = CHAR_LAYERS.base.loaded;
   if (hasBaseSprite) {
-    drawSpriteLayer(CHAR_LAYERS.base, -spriteW / 2, -spriteH, spriteW, spriteH, [0, 0, 1, 0.68]);
+    // 1. Torso / middle body (33% to 68% height)
+    drawSpriteLayer(CHAR_LAYERS.base, -spriteW / 2, -spriteH, spriteW, spriteH, [0, 0.33, 1, 0.35]);
 
+    // 2. Animated lower legs (68% to 100% height)
     const legLayer = (activeTraits.prosthesis && CHAR_LAYERS.prosthesis.loaded)
       ? CHAR_LAYERS.prosthesis
       : CHAR_LAYERS.base;
     drawAnimatedSpriteLegs(legLayer, spriteW, spriteH, animState, animTimer);
 
+    // 3. Torso/arm trait overlays (asthma, tremor)
     for (const traitId of orderList) {
-      if (!activeTraits[traitId] || traitId === "prosthesis") continue;
+      if (!activeTraits[traitId] || traitId === "prosthesis" || traitId === "blind" || traitId === "deaf") continue;
       const layer = CHAR_LAYERS[traitId];
       const zone = TRAIT_BODY_ZONES[traitId] || null;
       if (layer && layer.loaded) {
         drawSpriteLayer(layer, -spriteW / 2, -spriteH, spriteW, spriteH, zone);
       }
     }
+
+    // 4. Pivoting head (0% to 34% height) + head traits (blind, deaf) + missile hat
+    ctx.save();
+    ctx.translate(0, -44); // neck pivot
+    ctx.rotate(headAngle);
+    ctx.translate(0, 44);
+
+    drawSpriteLayer(CHAR_LAYERS.base, -spriteW / 2, -spriteH, spriteW, spriteH, [0, 0, 1, 0.34]);
+    for (const traitId of orderList) {
+      if (!activeTraits[traitId] || (traitId !== "blind" && traitId !== "deaf")) continue;
+      const layer = CHAR_LAYERS[traitId];
+      const zone = TRAIT_BODY_ZONES[traitId] || null;
+      if (layer && layer.loaded) {
+        drawSpriteLayer(layer, -spriteW / 2, -spriteH, spriteW, spriteH, zone);
+      }
+    }
+    if (opts.hasMissileHat) {
+      const ready = hero.hatCooldown <= 0;
+      ctx.fillStyle = ready ? "#facc15" : "#854d0e";
+      ctx.fillRect(-10, -56, 20, 4);
+      ctx.fillRect(-6, -62, 12, 6);
+    }
+    ctx.restore();
   } else {
     const swing = animState === "RUN" ? Math.sin(animTimer) * 7 : (animState === "CLIMB" ? Math.sin(animTimer) * 5 : 0);
     const liftA = animState === "RUN" ? Math.max(0, -Math.sin(animTimer)) * -3 : 0;
@@ -526,6 +554,11 @@ function drawLayeredCharacter(footX, footY, scaleFactor, activeTraits, timeSec, 
     ctx.lineTo(0, -24);
     ctx.stroke();
 
+    ctx.save();
+    ctx.translate(0, -41);
+    ctx.rotate(headAngle);
+    ctx.translate(0, 41);
+
     ctx.fillStyle = "#f7f4eb";
     ctx.beginPath();
     ctx.arc(0, -48, 7.5, 0, Math.PI * 2);
@@ -542,6 +575,13 @@ function drawLayeredCharacter(footX, footY, scaleFactor, activeTraits, timeSec, 
       ctx.arc(-5, -47, 3, 0, Math.PI * 2);
       ctx.fill();
     }
+    if (opts.hasMissileHat) {
+      const ready = hero.hatCooldown <= 0;
+      ctx.fillStyle = ready ? "#facc15" : "#854d0e";
+      ctx.fillRect(-10, -56, 20, 4);
+      ctx.fillRect(-6, -62, 12, 6);
+    }
+    ctx.restore();
   }
 
   if (opts.showAimGun) {
@@ -569,13 +609,6 @@ function drawLayeredCharacter(footX, footY, scaleFactor, activeTraits, timeSec, 
     ctx.arc(10 + puffPhase * 16, -45 - puffPhase * 6, 2.5 + puffPhase * 4.5, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
-  }
-
-  if (opts.hasMissileHat) {
-    const ready = hero.hatCooldown <= 0;
-    ctx.fillStyle = ready ? "#facc15" : "#854d0e";
-    ctx.fillRect(-10, -56, 20, 4);
-    ctx.fillRect(-6, -62, 12, 6);
   }
 
   ctx.restore();
