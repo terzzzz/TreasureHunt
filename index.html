@@ -41,8 +41,8 @@
       max-height: 100%;
       aspect-ratio: 328 / 207;
       box-shadow: 0 14px 40px rgba(0, 0, 0, 0.65);
-      background: #f5eedc;
-      cursor: pointer;
+      background: #f5f1e6;
+      cursor: crosshair;
     }
     #touch-ui {
       position: fixed;
@@ -131,68 +131,78 @@
 "use strict";
 
 /* ============================================================================
- * 1. CANVAS & 楷簿 (328mm x 207mm -> 984 x 621 px at 3 px/mm)
+ * 1. VIEWPORT & MULTI-SCREEN WORLD DIMENSIONS (328mm x 207mm per screen)
  * ========================================================================== */
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 
 const SCALE = 3;
-const W = 328 * SCALE;        // 984 px
-const H = 207 * SCALE;        // 621 px
-const HALF_W = W / 2;         // 492 px (Machine Gun max range = half screen)
+const W = 328 * SCALE;        // 984 px (1 opened notebook spread width)
+const H = 207 * SCALE;        // 621 px (1 opened notebook spread height)
+const HALF_W = W / 2;         // 492 px (1 single page width)
 const FPS = 60;
 const DT = 1 / FPS;
 
-// Offscreen canvas for the "Blind" circular sight mask
+// Stage 1: 2 spreads wide x 2 spreads tall (4 screens; expandable to 10-20 screens)
+const SCREENS_X = 2;
+const SCREENS_Y = 2;
+const WORLD_W = W * SCREENS_X; // 1968 px
+const WORLD_H = H * SCREENS_Y; // 1242 px
+
+// Offscreen canvas for Blind sight circle
 const sightCanvas = document.createElement("canvas");
 sightCanvas.width = W;
 sightCanvas.height = H;
 const sightCtx = sightCanvas.getContext("2d");
 
 /* ============================================================================
- * 2. TRAIT DEFINITIONS & 3-PART HUNTER NAME SYSTEM
+ * 2. FIVE DISABILITY TRAITS & 3-PART / 5-PART CODE-NAME SYSTEM
  * ========================================================================== */
 const TRAIT_DEFS = {
   blind: {
     id: "blind",
     parts: ["BL", "IN", "D"],
     zh: "盲",
-    label: "BL - IN - D",
-    desc: "Circle of watchable sight (145px radius)"
+    desc: "Circle of watchable sight (155px radius)"
   },
   deaf: {
     id: "deaf",
     parts: ["D", "EA", "F"],
     zh: "聾",
-    label: "D - EA - F",
-    desc: "0.40s delay on all key/button responses"
-  },
-  wheeled: {
-    id: "wheeled",
-    parts: ["WH", "EE", "LED"],
-    zh: "輪",
-    label: "WH - EE - LED",
-    desc: "1.38x ground speed; slow 2-hand climb, no shooting on ladder"
+    desc: "0.40s delay on BOTH press & release of any button"
   },
   prosthesis: {
     id: "prosthesis",
     parts: ["PROS", "THE", "SIS"],
     zh: "義",
-    label: "PROS - THE - SIS",
-    desc: "0.62x ground movement speed & slightly lower jump"
+    desc: "Slower horizontal ground movement (0.62x speed)"
+  },
+  tremor: {
+    id: "tremor",
+    parts: ["TR", "EM", "OR"],
+    zh: "震",
+    desc: "Shaky aim mark & wide bullet/bone spread cone"
+  },
+  asthma: {
+    id: "asthma",
+    parts: ["AS", "TH", "MA"],
+    zh: "喘",
+    desc: "Holding A or W fills fatigue; full = 1s breathing stun on ground"
   }
 };
 
-const TRAIT_ORDER = ["blind", "deaf", "wheeled", "prosthesis"];
+const TRAIT_ORDER = ["blind", "deaf", "prosthesis", "tremor", "asthma"];
 
 const setup = {
-  difficulty: "NORMAL", // "NORMAL" (1 trait) | "HARD" (3 traits)
-  selected: ["blind"],  // Ordered array of trait IDs
-  uiBoxes: []           // Clickable hit areas on selection screen
+  difficulty: "NORMAL", // "NORMAL" (1) | "HARD" (3) | "ULTIMATE" (all 5)
+  selected: ["blind"],
+  uiBoxes: []
 };
 
 function requiredTraitCount() {
-  return setup.difficulty === "HARD" ? 3 : 1;
+  if (setup.difficulty === "ULTIMATE") return 5;
+  if (setup.difficulty === "HARD") return 3;
+  return 1;
 }
 
 function buildHunterIdentity(traitIds) {
@@ -207,46 +217,79 @@ function buildHunterIdentity(traitIds) {
       zhTag: t.zh
     };
   }
-  // 3 traits: Part 1 of 1st + Part 2 of 2nd + Part 3 of 3rd
-  const p1 = TRAIT_DEFS[traitIds[0]].parts[0];
-  const p2 = TRAIT_DEFS[traitIds[1]].parts[1];
-  const p3 = TRAIT_DEFS[traitIds[2]].parts[2];
+  if (traitIds.length === 3) {
+    const p1 = TRAIT_DEFS[traitIds[0]].parts[0];
+    const p2 = TRAIT_DEFS[traitIds[1]].parts[1];
+    const p3 = TRAIT_DEFS[traitIds[2]].parts[2];
+    const zhTag = traitIds.map(id => TRAIT_DEFS[id].zh).join("·");
+    return {
+      codeName: p1 + p2 + p3,
+      splitName: `${p1}·${p2}·${p3}`,
+      zhTag
+    };
+  }
+  // ULTIMATE (All 5 traits)
+  const parts = [
+    TRAIT_DEFS[traitIds[0]].parts[0],
+    TRAIT_DEFS[traitIds[1]].parts[1],
+    TRAIT_DEFS[traitIds[2]].parts[1],
+    TRAIT_DEFS[traitIds[3]].parts[1],
+    TRAIT_DEFS[traitIds[4]].parts[2]
+  ];
   const zhTag = traitIds.map(id => TRAIT_DEFS[id].zh).join("·");
   return {
-    codeName: p1 + p2 + p3,
-    splitName: `${p1}·${p2}·${p3}`,
+    codeName: parts.join(""),
+    splitName: parts.join("·"),
     zhTag
   };
 }
 
+function setDifficulty(diff) {
+  setup.difficulty = diff;
+  if (diff === "NORMAL") {
+    setup.selected = setup.selected.length > 0 ? [setup.selected[0]] : ["blind"];
+  } else if (diff === "HARD") {
+    while (setup.selected.length > 3) setup.selected.pop();
+  } else if (diff === "ULTIMATE") {
+    for (const id of TRAIT_ORDER) {
+      if (!setup.selected.includes(id)) setup.selected.push(id);
+    }
+  }
+}
+
 function toggleTraitSelection(traitId) {
+  if (setup.difficulty === "ULTIMATE") {
+    // Allow reordering in Ultimate mode by moving clicked trait to end
+    const idx = setup.selected.indexOf(traitId);
+    if (idx !== -1) {
+      setup.selected.splice(idx, 1);
+      setup.selected.push(traitId);
+    }
+    return;
+  }
   const maxPicks = requiredTraitCount();
   const idx = setup.selected.indexOf(traitId);
   if (idx !== -1) {
     setup.selected.splice(idx, 1);
   } else {
-    if (setup.selected.length >= maxPicks) {
-      setup.selected.shift();
-    }
+    if (setup.selected.length >= maxPicks) setup.selected.shift();
     setup.selected.push(traitId);
   }
 }
 
 /* ============================================================================
- * 3. OPTIONAL PNG ASSET LOADER (Relative paths for GitHub Pages & iOS)
+ * 3. OPTIONAL PNG ASSET LOADER (./assets/ for GitHub Pages & iOS)
  * ========================================================================== */
 const ASSET_PATHS = {
-  bgRoom0: "./assets/bg_room0.png",
-  bgRoom1: "./assets/bg_room1.png",
-  hero:    "./assets/hero.png",
-  giant:   "./assets/giant.png",
-  giantRod:"./assets/giant_rod.png",
-  monster: "./assets/monster.png",
-  chicken: "./assets/chicken.png",
-  bone:    "./assets/bone.png",
-  hat:     "./assets/hat.png",
-  missile: "./assets/missile.png",
-  treasure:"./assets/treasure.png"
+  hero:     "./assets/hero.png",
+  giant:    "./assets/giant.png",
+  giantAxe: "./assets/giant_axe.png",
+  blade:    "./assets/blade_enemy.png",
+  chicken:  "./assets/chicken.png",
+  bone:     "./assets/bone.png",
+  hat:      "./assets/hat.png",
+  crown:    "./assets/crown.png",
+  treasure: "./assets/treasure.png"
 };
 
 const ASSETS = {};
@@ -276,13 +319,12 @@ const SFX = {
   },
   beep(freq, dur, type = "square", gainVal = 0.08, slideTo = null) {
     if (this.muted || !this.ctx) return;
-    // Muffle audio slightly if Deaf trait is active
-    const deafFactor = hero.traits.deaf ? 0.35 : 1.0;
+    const deafFactor = hero.traits.deaf ? 0.3 : 1.0;
     const t = this.ctx.currentTime;
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
     osc.type = type;
-    osc.frequency.setValueAtTime(freq * (hero.traits.deaf ? 0.7 : 1), t);
+    osc.frequency.setValueAtTime(freq * (hero.traits.deaf ? 0.68 : 1), t);
     if (slideTo) osc.frequency.exponentialRampToValueAtTime(slideTo, t + dur);
     gain.gain.setValueAtTime(gainVal * deafFactor, t);
     gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
@@ -294,33 +336,78 @@ const SFX = {
 };
 
 /* ============================================================================
- * 5. INPUT MANAGER + 0.4s DEAF DELAY BUFFER
+ * 5. INPUT MANAGER (ASDW + Mouse Aim Mark + 0.40s Deaf Press/Release Delay)
  * ========================================================================== */
 const keys = Object.create(null);
-const justPressed = Object.create(null);
+const mouse = {
+  screenX: W * 0.65,
+  screenY: H * 0.65,
+  leftDown: false,
+  rightDown: false,
+  middleDown: false
+};
 const touchState = { left: false, right: false, up: false, down: false, jump: false, gun: false, bone: false, hat: false };
 const touchUI = document.getElementById("touch-ui");
 
-const inputDelayBuffer = []; // Stores { time, input } for 0.4s Deaf delay
+const inputDelayBuffer = []; // Stores { time, raw } for 0.40s press & release delay
+let prevEffectiveInput = {
+  left: false, right: false, up: false, down: false,
+  jumpHeld: false, gunHeld: false, boneHeld: false, hatHeld: false
+};
+
+window.addEventListener("contextmenu", e => e.preventDefault());
+
+window.addEventListener("mousemove", e => {
+  const rect = canvas.getBoundingClientRect();
+  mouse.screenX = Math.max(0, Math.min(W, ((e.clientX - rect.left) / rect.width) * W));
+  mouse.screenY = Math.max(0, Math.min(H, ((e.clientY - rect.top) / rect.height) * H));
+});
+
+window.addEventListener("mousedown", e => {
+  SFX.unlock();
+  const rect = canvas.getBoundingClientRect();
+  const cx = ((e.clientX - rect.left) / rect.width) * W;
+  const cy = ((e.clientY - rect.top) / rect.height) * H;
+
+  if (game.state === "SELECT") {
+    for (const box of setup.uiBoxes) {
+      if (cx >= box.x && cx <= box.x + box.w && cy >= box.y && cy <= box.y + box.h) {
+        box.onClick();
+        break;
+      }
+    }
+    return;
+  }
+
+  mouse.screenX = Math.max(0, Math.min(W, cx));
+  mouse.screenY = Math.max(0, Math.min(H, cy));
+  if (e.button === 0) mouse.leftDown = true;
+  if (e.button === 2) mouse.rightDown = true;
+  if (e.button === 1) mouse.middleDown = true;
+});
+
+window.addEventListener("mouseup", e => {
+  if (e.button === 0) mouse.leftDown = false;
+  if (e.button === 2) mouse.rightDown = false;
+  if (e.button === 1) mouse.middleDown = false;
+});
 
 window.addEventListener("keydown", e => {
   SFX.unlock();
   touchUI.classList.remove("active");
-  if (!keys[e.code]) justPressed[e.code] = true;
   keys[e.code] = true;
 
   if (game.state === "SELECT") {
     if (e.code === "Digit1") toggleTraitSelection("blind");
     else if (e.code === "Digit2") toggleTraitSelection("deaf");
-    else if (e.code === "Digit3") toggleTraitSelection("wheeled");
-    else if (e.code === "Digit4") toggleTraitSelection("prosthesis");
-    else if (e.code === "KeyN") {
-      setup.difficulty = "NORMAL";
-      if (setup.selected.length > 1) setup.selected = [setup.selected[0]];
-    } else if (e.code === "KeyH") {
-      setup.difficulty = "HARD";
-    } else if ((e.code === "Enter" || e.code === "Space") && setup.selected.length === requiredTraitCount()) {
-      startEpisodeWithSelectedTraits();
+    else if (e.code === "Digit3") toggleTraitSelection("prosthesis");
+    else if (e.code === "Digit4") toggleTraitSelection("tremor");
+    else if (e.code === "Digit5") toggleTraitSelection("asthma");
+    else if (e.code === "KeyN") setDifficulty("NORMAL");
+    else if (e.code === "KeyH") setDifficulty("HARD");
+    else if (e.code === "KeyU") setDifficulty("ULTIMATE");
+    else if ((e.code === "Enter" || e.code === "Space") && setup.selected.length === requiredTraitCount()) {
+      startStageWithSelectedTraits();
     }
     return;
   }
@@ -334,7 +421,7 @@ window.addEventListener("keydown", e => {
   } else if (e.code === "KeyM") {
     SFX.muted = !SFX.muted;
   } else if (e.code === "KeyR" && (game.state === "GAMEOVER" || game.state === "VICTORY")) {
-    startEpisodeWithSelectedTraits();
+    startStageWithSelectedTraits();
   }
 });
 
@@ -342,38 +429,41 @@ window.addEventListener("keyup", e => {
   keys[e.code] = false;
 });
 
-function handleCanvasPointer(clientX, clientY) {
-  SFX.unlock();
-  if (game.state !== "SELECT") return;
-  const rect = canvas.getBoundingClientRect();
-  const x = ((clientX - rect.left) / rect.width) * W;
-  const y = ((clientY - rect.top) / rect.height) * H;
-
-  for (const box of setup.uiBoxes) {
-    if (x >= box.x && x <= box.x + box.w && y >= box.y && y <= box.y + box.h) {
-      box.onClick();
-      break;
-    }
-  }
-}
-
-canvas.addEventListener("mousedown", e => handleCanvasPointer(e.clientX, e.clientY));
-canvas.addEventListener("touchstart", e => {
-  if (game.state === "SELECT" && e.changedTouches.length > 0) {
-    e.preventDefault();
-    const t = e.changedTouches[0];
-    handleCanvasPointer(t.clientX, t.clientY);
-  }
-}, { passive: false });
-
 function setupTouchControls() {
   const stickBase = document.getElementById("stick-base");
   const stickKnob = document.getElementById("stick-knob");
   let stickTouchId = null;
 
-  window.addEventListener("touchstart", () => {
+  canvas.addEventListener("touchstart", e => {
     SFX.unlock();
-    if (game.state === "PLAY") touchUI.classList.add("active");
+    if (e.changedTouches.length > 0) {
+      const t = e.changedTouches[0];
+      const rect = canvas.getBoundingClientRect();
+      const cx = ((t.clientX - rect.left) / rect.width) * W;
+      const cy = ((t.clientY - rect.top) / rect.height) * H;
+      if (game.state === "SELECT") {
+        e.preventDefault();
+        for (const box of setup.uiBoxes) {
+          if (cx >= box.x && cx <= box.x + box.w && cy >= box.y && cy <= box.y + box.h) {
+            box.onClick();
+            break;
+          }
+        }
+        return;
+      }
+      touchUI.classList.add("active");
+      mouse.screenX = Math.max(0, Math.min(W, cx));
+      mouse.screenY = Math.max(0, Math.min(H, cy));
+    }
+  }, { passive: false });
+
+  canvas.addEventListener("touchmove", e => {
+    if (game.state === "PLAY" && e.changedTouches.length > 0) {
+      const t = e.changedTouches[0];
+      const rect = canvas.getBoundingClientRect();
+      mouse.screenX = Math.max(0, Math.min(W, ((t.clientX - rect.left) / rect.width) * W));
+      mouse.screenY = Math.max(0, Math.min(H, ((t.clientY - rect.top) / rect.height) * H));
+    }
   }, { passive: true });
 
   stickBase.addEventListener("touchstart", e => {
@@ -422,12 +512,11 @@ function setupTouchControls() {
     touchState.down  = dy > dead;
   }
 
-  function bindBtn(id, field, virtualKey) {
+  function bindBtn(id, field) {
     const el = document.getElementById(id);
     el.addEventListener("touchstart", e => {
       e.preventDefault();
       SFX.unlock();
-      if (!touchState[field]) justPressed[virtualKey] = true;
       touchState[field] = true;
       el.classList.add("pressed");
     }, { passive: false });
@@ -440,160 +529,187 @@ function setupTouchControls() {
     el.addEventListener("touchcancel", release);
   }
 
-  bindBtn("btn-jump", "jump", "TOUCH_JUMP");
-  bindBtn("btn-gun",  "gun",  "TOUCH_GUN");
-  bindBtn("btn-bone", "bone", "TOUCH_BONE");
-  bindBtn("btn-hat",  "hat",  "TOUCH_HAT");
+  bindBtn("btn-jump", "jump");
+  bindBtn("btn-gun",  "gun");
+  bindBtn("btn-bone", "bone");
+  bindBtn("btn-hat",  "hat");
 }
 setupTouchControls();
 
-function sampleRawInput() {
+function sampleRawState() {
+  const aHeld = !!(keys["KeyA"] || keys["ArrowLeft"] || touchState.left);
+  const dHeld = !!(keys["KeyD"] || keys["ArrowRight"] || touchState.right);
+  const wHeld = !!(keys["KeyW"] || keys["ArrowUp"] || touchState.up);
+  const sHeld = !!(keys["KeyS"] || keys["ArrowDown"] || touchState.down);
+  const spaceHeld = !!(keys["Space"] || touchState.jump);
+
   return {
-    left:        !!(keys["ArrowLeft"]  || keys["KeyA"] || touchState.left),
-    right:       !!(keys["ArrowRight"] || keys["KeyD"] || touchState.right),
-    up:          !!(keys["ArrowUp"]    || keys["KeyW"] || touchState.up),
-    down:        !!(keys["ArrowDown"]  || keys["KeyS"] || touchState.down),
-    jumpHeld:    !!(keys["Space"] || keys["KeyZ"] || keys["KeyK"] || touchState.jump),
-    jumpPressed: !!(justPressed["Space"] || justPressed["KeyZ"] || justPressed["KeyK"] || justPressed["TOUCH_JUMP"]),
-    gunHeld:     !!(keys["KeyJ"] || keys["KeyX"] || keys["Enter"] || touchState.gun),
-    bonePressed: !!(justPressed["KeyU"] || justPressed["KeyC"] || justPressed["TOUCH_BONE"]),
-    hatPressed:  !!(justPressed["KeyI"] || justPressed["KeyV"] || keys["ShiftLeft"] || keys["ShiftRight"] || justPressed["TOUCH_HAT"])
+    aHeld,
+    dHeld,
+    wHeld,
+    sHeld,
+    jumpHeld: wHeld || spaceHeld,
+    gunHeld:  !!(mouse.leftDown || keys["KeyJ"] || touchState.gun),
+    boneHeld: !!(mouse.rightDown || keys["KeyE"] || keys["KeyC"] || touchState.bone),
+    hatHeld:  !!(mouse.middleDown || keys["KeyF"] || keys["ShiftLeft"] || keys["ShiftRight"] || touchState.hat)
   };
 }
 
 function getEffectiveInput() {
-  const raw = sampleRawInput();
-  if (!hero.traits.deaf) {
-    return raw;
+  const raw = sampleRawState();
+  let state = raw;
+
+  if (hero.traits.deaf) {
+    // Record every frame's held state; both press (false->true) and release (true->false)
+    // emerge exactly 0.40s later!
+    inputDelayBuffer.push({ time: game.elapsedTime, raw });
+    const targetTime = game.elapsedTime - 0.40;
+    while (inputDelayBuffer.length > 1 && inputDelayBuffer[1].time <= targetTime) {
+      inputDelayBuffer.shift();
+    }
+    if (inputDelayBuffer[0].time <= targetTime) {
+      state = inputDelayBuffer[0].raw;
+    } else {
+      state = {
+        aHeld: false, dHeld: false, wHeld: false, sHeld: false,
+        jumpHeld: false, gunHeld: false, boneHeld: false, hatHeld: false
+      };
+    }
   }
 
-  // Push current snapshot and pop any snapshot that has aged >= 0.40 seconds
-  inputDelayBuffer.push({ time: game.elapsedTime, input: raw });
-  const targetTime = game.elapsedTime - 0.40;
-  let delayed = {
-    left: false, right: false, up: false, down: false,
-    jumpHeld: false, jumpPressed: false, gunHeld: false, bonePressed: false, hatPressed: false
+  const effective = {
+    ...state,
+    jumpPressed: state.jumpHeld && !prevEffectiveInput.jumpHeld,
+    bonePressed: state.boneHeld && !prevEffectiveInput.boneHeld,
+    hatPressed:  state.hatHeld  && !prevEffectiveInput.hatHeld
   };
-
-  while (inputDelayBuffer.length > 0 && inputDelayBuffer[0].time <= targetTime) {
-    const item = inputDelayBuffer.shift();
-    // Preserve edge-triggered presses across the 0.4s boundary
-    delayed = {
-      ...item.input,
-      jumpPressed: delayed.jumpPressed || item.input.jumpPressed,
-      bonePressed: delayed.bonePressed || item.input.bonePressed,
-      hatPressed:  delayed.hatPressed  || item.input.hatPressed
-    };
-  }
-  return delayed;
+  prevEffectiveInput = state;
+  return effective;
 }
 
 /* ============================================================================
- * 6. EPISODE ROOM DEFINITIONS (Spread 01 & Spread 02)
+ * 6. STAGE 1 WORLD BUILDER (Screen 1 = Your Sketch, Connected to Upper & Right Spreads)
  * ========================================================================== */
-function createRooms() {
-  return [
-    {
-      id: 0,
-      pageLeft: "01",
-      pageRight: "02",
-      bgAsset: "bgRoom0",
-      solids: [
-        { x: 0,   y: 564, w: 462, h: 57 },
-        { x: 522, y: 564, w: 462, h: 57 },
-        { x: 0,   y: 0,   w: 28,  h: 564 },
-        { x: 558, y: 396, w: 180, h: 20 },
-        { x: 956, y: 0,   w: 28,  h: 420 }
-      ],
-      oneWay: [
-        { x: 102, y: 432, w: 180, h: 12 },
-        { x: 282, y: 300, w: 180, h: 12 },
-        { x: 558, y: 264, w: 252, h: 12 }
-      ],
-      ladders: [
-        { x: 222, y: 432, w: 36, h: 132 },
-        { x: 318, y: 300, w: 36, h: 132 },
-        { x: 750, y: 264, w: 36, h: 300 }
-      ],
-      pickups: [
-        { type: "chicken", x: 130, y: 398, w: 28, h: 24, collected: false },
-        { type: "hat",     x: 610, y: 226, w: 30, h: 24, collected: false },
-        { type: "gem",     x: 360, y: 268, w: 22, h: 22, collected: false }
-      ],
-      enemies: [
-        {
-          kind: "crawler", x: 320, y: 524, w: 32, h: 40,
-          vx: -75, vy: 0, minX: 140, maxX: 430, facing: -1,
-          hp: 30, maxHp: 30, animTimer: 0, hurtTimer: 0, alive: true
-        },
-        {
-          kind: "giant", x: 790, y: 472, w: 54, h: 92,
-          vx: -55, vy: 0, minX: 745, maxX: 930, facing: -1,
-          hp: 140, maxHp: 140, animTimer: 0, hurtTimer: 0, alive: true,
-          aiState: "WALK", aiTimer: 0, rodAngle: -0.4, rodLength: 74, struckThisSwing: false
-        }
-      ],
-      exits: { right: 1 }
-    },
-    {
-      id: 1,
-      pageLeft: "03",
-      pageRight: "04",
-      bgAsset: "bgRoom1",
-      solids: [
-        { x: 0,   y: 564, w: 984, h: 57 },
-        { x: 956, y: 0,   w: 28,  h: 564 },
-        { x: 252, y: 420, w: 144, h: 20 },
-        { x: 594, y: 420, w: 144, h: 20 }
-      ],
-      oneWay: [
-        { x: 108, y: 288, w: 216, h: 12 },
-        { x: 660, y: 288, w: 216, h: 12 },
-        { x: 396, y: 192, w: 192, h: 12 }
-      ],
-      ladders: [
-        { x: 144, y: 288, w: 36, h: 276 },
-        { x: 804, y: 288, w: 36, h: 276 },
-        { x: 474, y: 192, w: 36, h: 228 }
-      ],
-      pickups: [
-        { type: "chicken",  x: 150, y: 254, w: 28, h: 24, collected: false },
-        { type: "treasure", x: 472, y: 148, w: 40, h: 34, collected: false }
-      ],
-      enemies: [
-        {
-          kind: "giant", x: 440, y: 472, w: 54, h: 92,
-          vx: 65, vy: 0, minX: 220, maxX: 740, facing: 1,
-          hp: 160, maxHp: 160, animTimer: 0, hurtTimer: 0, alive: true,
-          aiState: "WALK", aiTimer: 0, rodAngle: -0.4, rodLength: 74, struckThisSwing: false
-        },
-        {
-          kind: "crawler", x: 690, y: 248, w: 32, h: 40,
-          vx: 80, vy: 0, minX: 665, maxX: 850, facing: 1,
-          hp: 35, maxHp: 35, animTimer: 0, hurtTimer: 0, alive: true
-        }
-      ],
-      exits: { left: 0 }
-    }
-  ];
+function createStageWorld() {
+  // Screen 1 sits at Bottom-Left spread: x = 0..984, y = 621..1242
+  const S1_Y = H; // 621
+
+  return {
+    solids: [
+      // Outer world borders
+      { x: 0,           y: 0,          w: 24,  h: WORLD_H }, // Far left wall
+      { x: WORLD_W - 24,y: 0,          w: 24,  h: WORLD_H }, // Far right wall
+      { x: 0,           y: 0,          w: WORLD_W, h: 24 },  // Top ceiling
+
+      // --- SCREEN 1 (Your Drawn Spread: Pages 26 & 27, y: 621..1242) ---
+      // Bottom hatched floor across both pages
+      { x: 0,   y: S1_Y + 548, w: 984, h: 73, hatched: true },
+      // Right boundary wall of Screen 1 (matches right vertical wall in sketch)
+      { x: 944, y: S1_Y + 370, w: 22,  h: 178 },
+      // Ceiling / 2nd-floor platform above Screen 1 corridor (with gap for the ladder!)
+      { x: 24,  y: S1_Y + 382, w: 392, h: 18, hatched: true },
+      { x: 472, y: S1_Y + 382, w: 494, h: 18, hatched: true },
+
+      // --- SCREEN 2 (Upper-Left Spread above Screen 1, y: 0..621) ---
+      { x: 24,  y: 440, w: 320, h: 20, hatched: true },
+      { x: 520, y: 440, w: 464, h: 20, hatched: true },
+
+      // --- SCREEN 3 & 4 (Right Spreads, x: 984..1968) ---
+      { x: 984, y: 440, w: 420, h: 20, hatched: true },
+      { x: 984, y: S1_Y + 548, w: 984, h: 73, hatched: true },
+      { x: 1120,y: S1_Y + 390, w: 260, h: 20, hatched: true },
+      { x: 1520,y: S1_Y + 260, w: 340, h: 22, hatched: true }
+    ],
+
+    oneWay: [
+      // Upper-left spread ledges
+      { x: 160, y: 310, w: 200, h: 12 },
+      { x: 620, y: 310, w: 220, h: 12 },
+      // Upper-right spread ledges
+      { x: 1180, y: 310, w: 240, h: 12 },
+      { x: 1520, y: 210, w: 260, h: 12 }
+    ],
+
+    ladders: [
+      // Screen 1 Ladder (drawn near center spine leading up through ceiling!)
+      { x: 424, y: S1_Y + 382, w: 40, h: 166 },
+      // Upper-left spread ladder up to Screen 2 main floor
+      { x: 424, y: 440, w: 40, h: S1_Y - 58 },
+      // Upper-left to top ledge ladder
+      { x: 760, y: 310, w: 40, h: 130 },
+      // Right spread ladder down to lower-right cavern
+      { x: 1440, y: 440, w: 40, h: S1_Y + 108 },
+      { x: 1640, y: S1_Y + 260, w: 40, h: 288 }
+    ],
+
+    pickups: [
+      // --- SCREEN 1 Pickups (Exact positions from your sketch!) ---
+      { type: "crown",   x: 215, y: S1_Y + 455, w: 26, h: 20, collected: false }, // Crown #1 between Hero & Blade Enemy
+      { type: "crown",   x: 785, y: S1_Y + 435, w: 26, h: 20, collected: false }, // Crown #2 upper right near Giant
+      { type: "chicken", x: 845, y: S1_Y + 516, w: 34, h: 28, collected: false }, // Roast Chicken platter bottom-right!
+
+      // --- Later Screens Pickups ---
+      { type: "hat",      x: 240,  y: 274, w: 30, h: 24, collected: false },        // Special Mini-Missile Hat
+      { type: "crown",    x: 1280, y: 276, w: 26, h: 20, collected: false },
+      { type: "chicken",  x: 1220, y: S1_Y + 358, w: 34, h: 28, collected: false },
+      { type: "treasure", x: 1660, y: S1_Y + 214, w: 42, h: 36, collected: false }  // Stage 1 Treasure Chest
+    ],
+
+    enemies: [
+      // --- SCREEN 1 Enemies (Exact positions from your sketch!) ---
+      // 1) Knife / Blade Enemy on Page 26
+      {
+        kind: "blade", x: 310, y: S1_Y + 496, w: 30, h: 52,
+        vx: -80, minX: 185, maxX: 405, facing: -1,
+        hp: 40, maxHp: 40, animTimer: 0, hurtTimer: 0, alive: true,
+        slashTimer: 0
+      },
+      // 2) Broad-Shouldered Axe Giant on Page 27
+      {
+        kind: "giant", x: 635, y: S1_Y + 448, w: 62, h: 100,
+        vx: -55, minX: 525, maxX: 775, facing: -1,
+        hp: 150, maxHp: 150, animTimer: 0, hurtTimer: 0, alive: true,
+        aiState: "WALK", aiTimer: 0, weaponAngle: -0.35, weaponLength: 76, struckThisSwing: false
+      },
+
+      // --- Upper & Right Spread Enemies ---
+      {
+        kind: "blade", x: 650, y: 388, w: 30, h: 52,
+        vx: 95, minX: 540, maxX: 900, facing: 1,
+        hp: 45, maxHp: 45, animTimer: 0, hurtTimer: 0, alive: true,
+        slashTimer: 0
+      },
+      {
+        kind: "giant", x: 1180, y: 340, w: 62, h: 100,
+        vx: 65, minX: 1020, maxX: 1360, facing: 1,
+        hp: 170, maxHp: 170, animTimer: 0, hurtTimer: 0, alive: true,
+        aiState: "WALK", aiTimer: 0, weaponAngle: -0.35, weaponLength: 76, struckThisSwing: false
+      },
+      {
+        kind: "blade", x: 1320, y: S1_Y + 496, w: 30, h: 52,
+        vx: -105, minX: 1050, maxX: 1580, facing: -1,
+        hp: 50, maxHp: 50, animTimer: 0, hurtTimer: 0, alive: true,
+        slashTimer: 0
+      }
+    ]
+  };
 }
 
 /* ============================================================================
  * 7. GAME STATE & HERO INITIALIZATION
  * ========================================================================== */
 const game = {
-  state: "SELECT", // SELECT | PLAY | TRANSITION | GAMEOVER | VICTORY
+  state: "SELECT", // SELECT | PLAY | GAMEOVER | VICTORY
   debug: false,
   elapsedTime: 0,
-  rooms: createRooms(),
-  roomIdx: 0,
+  world: createStageWorld(),
   stageTimer: 600,
   score: 0,
   shakeTimer: 0,
-  transition: {
-    active: false, fromIdx: 0, toIdx: 1, dirX: 1,
-    t: 0, duration: 0.32, nextHeroX: 40, nextHeroY: 500
-  },
+  camX: 0,
+  camY: H, // Starts centered on Screen 1 (Bottom-Left spread)
+  aimWorldX: 300,
+  aimWorldY: H + 480,
   bullets: [],
   bones: [],
   missiles: [],
@@ -601,33 +717,50 @@ const game = {
 };
 
 const hero = {
-  x: 64, y: 510, w: 26, h: 44,
-  vx: 0, vy: 0, facing: 1, aimAngle: 0,
-  grounded: false, onLadder: false, dropThroughTimer: 0,
-  hp: 100, maxHp: 100, invulnTimer: 0,
-  gunCooldown: 0, bones: 0,
-  hasMissileHat: false, hatCooldown: 0, hatMaxCooldown: 4.5,
-  animState: "IDLE", animTimer: 0,
-  traits: { blind: true, deaf: false, wheeled: false, prosthesis: false },
+  x: 112,
+  y: H + 496, // Spawn on left side of Screen 1 just like your drawing!
+  w: 28,
+  h: 52,
+  vx: 0,
+  vy: 0,
+  facing: 1,
+  aimAngle: 0,
+  grounded: false,
+  onLadder: false,
+  dropThroughTimer: 0,
+  hp: 100,
+  maxHp: 100,
+  invulnTimer: 0,
+  gunCooldown: 0,
+  bones: 0,
+  hasMissileHat: false,
+  hatCooldown: 0,
+  hatMaxCooldown: 4.5,
+  asthma: 0,          // 0..100 fatigue meter
+  asthmaStun: 0,      // Remaining 1.0s stun timer
+  asthmaPending: false, // Waits until touching ground if triggered mid-air
+  animState: "IDLE",
+  animTimer: 0,
+  traits: { blind: true, deaf: false, prosthesis: false, tremor: false, asthma: false },
   identity: { codeName: "BLIND", splitName: "BL·IN·D", zhTag: "盲" }
 };
 
-function startEpisodeWithSelectedTraits() {
+function startStageWithSelectedTraits() {
   const chosen = setup.selected.slice(0, requiredTraitCount());
   if (chosen.length !== requiredTraitCount()) return;
 
   hero.traits = {
     blind:      chosen.includes("blind"),
     deaf:       chosen.includes("deaf"),
-    wheeled:    chosen.includes("wheeled"),
-    prosthesis: chosen.includes("prosthesis")
+    prosthesis: chosen.includes("prosthesis"),
+    tremor:     chosen.includes("tremor"),
+    asthma:     chosen.includes("asthma")
   };
   hero.identity = buildHunterIdentity(chosen);
 
   game.state = "PLAY";
   game.elapsedTime = 0;
-  game.rooms = createRooms();
-  game.roomIdx = 0;
+  game.world = createStageWorld();
   game.stageTimer = 600;
   game.score = 0;
   game.bullets.length = 0;
@@ -635,48 +768,30 @@ function startEpisodeWithSelectedTraits() {
   game.missiles.length = 0;
   game.particles.length = 0;
   inputDelayBuffer.length = 0;
-  game.transition.active = false;
+  prevEffectiveInput = {
+    left: false, right: false, up: false, down: false,
+    jumpHeld: false, gunHeld: false, boneHeld: false, hatHeld: false
+  };
 
   Object.assign(hero, {
-    x: 64, y: 510, vx: 0, vy: 0, facing: 1, aimAngle: 0,
+    x: 112, y: H + 496, vx: 0, vy: 0, facing: 1, aimAngle: 0,
     grounded: false, onLadder: false, dropThroughTimer: 0,
     hp: 100, invulnTimer: 0, gunCooldown: 0,
     bones: 0, hasMissileHat: false, hatCooldown: 0,
+    asthma: 0, asthmaStun: 0, asthmaPending: false,
     animState: "IDLE", animTimer: 0
   });
+
+  // Snap camera immediately to hero on stage start
+  game.camX = Math.max(0, Math.min(WORLD_W - W, hero.x + hero.w / 2 - W / 2));
+  game.camY = Math.max(0, Math.min(WORLD_H - H, hero.y + hero.h / 2 - H / 2));
 }
 
 /* ============================================================================
- * 8. PHYSICS, TRAIT MODIFIERS & 60 FPS SIMULATION
+ * 8. PHYSICS, CURSOR AIMING, BULLET ARC & 5 TRAIT MECHANICS (60 FPS)
  * ========================================================================== */
 function rectsOverlap(a, b) {
   return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
-}
-
-function resolveAimVector(input) {
-  const horiz = input.left || input.right;
-  let vx = hero.facing;
-  let vy = 0;
-
-  if (input.up && horiz) {
-    vx = hero.facing * Math.SQRT1_2;
-    vy = -Math.SQRT1_2;
-  } else if (input.up && !horiz) {
-    vx = 0;
-    vy = -1;
-  } else if (input.down && horiz) {
-    vx = hero.facing * Math.SQRT1_2;
-    vy = Math.SQRT1_2;
-  } else if (input.down && !horiz && (!hero.grounded || hero.onLadder)) {
-    vx = 0;
-    vy = 1;
-  } else {
-    vx = hero.facing;
-    vy = 0;
-  }
-
-  hero.aimAngle = Math.atan2(vy, vx);
-  return { vx, vy };
 }
 
 function spawnParticles(x, y, color, count = 8, speed = 160) {
@@ -700,10 +815,10 @@ function damageHero(amount, knockDir) {
   hero.hp = Math.max(0, hero.hp - amount);
   hero.invulnTimer = 1.0;
   hero.onLadder = false;
-  hero.vx = knockDir * 220;
-  hero.vy = -260;
+  hero.vx = knockDir * 210;
+  hero.vy = -250;
   game.shakeTimer = 0.2;
-  spawnParticles(hero.x + hero.w / 2, hero.y + hero.h / 2, "#d93838", 12, 180);
+  spawnParticles(hero.x + hero.w / 2, hero.y + hero.h / 2, "#dc2626", 12, 180);
   SFX.beep(140, 0.25, "sawtooth", 0.12, 60);
 
   if (hero.hp <= 0) {
@@ -711,70 +826,196 @@ function damageHero(amount, knockDir) {
   }
 }
 
-function stepHero(input, room) {
+function updateCamera() {
+  // Screen tries to center the player and scrolls up, down, left, right when needed
+  const targetX = Math.max(0, Math.min(WORLD_W - W, hero.x + hero.w / 2 - W / 2));
+  const targetY = Math.max(0, Math.min(WORLD_H - H, hero.y + hero.h / 2 - H / 2));
+  game.camX += (targetX - game.camX) * 0.14;
+  game.camY += (targetY - game.camY) * 0.14;
+}
+
+function stepHero(input, world) {
   const GRAVITY = 1380;
-
-  // Apply trait speed modifiers:
-  // - Wheeled: 1.38x faster horizontal ground speed, 0.45x slower ladder climb
-  // - Prosthesis: 0.62x slower ground speed, slightly lower jump
-  let walkSpeed = 205;
-  if (hero.traits.wheeled)    walkSpeed *= 1.38;
-  if (hero.traits.prosthesis) walkSpeed *= 0.62;
-
-  const climbSpeed = hero.traits.wheeled ? 140 * 0.45 : 140;
-  const jumpVel    = hero.traits.prosthesis ? -445 : -490;
+  const WALK_SPEED = hero.traits.prosthesis ? 210 * 0.62 : 210;
+  const CLIMB_SPEED = 145;
+  const JUMP_VEL = -505;
 
   if (hero.invulnTimer > 0) hero.invulnTimer = Math.max(0, hero.invulnTimer - DT);
   if (hero.gunCooldown > 0) hero.gunCooldown = Math.max(0, hero.gunCooldown - DT);
   if (hero.hatCooldown > 0) hero.hatCooldown = Math.max(0, hero.hatCooldown - DT);
   if (hero.dropThroughTimer > 0) hero.dropThroughTimer = Math.max(0, hero.dropThroughTimer - DT);
 
-  // Ladder overlap
-  const heroCenter = { x: hero.x + 6, y: hero.y + 4, w: hero.w - 12, h: hero.h };
-  const ladder = room.ladders.find(l => rectsOverlap(heroCenter, l));
+  // Update world aim mark position (with Tremor jitter if active)
+  const jitterX = hero.traits.tremor ? Math.sin(game.elapsedTime * 37) * 14 + (Math.random() - 0.5) * 10 : 0;
+  const jitterY = hero.traits.tremor ? Math.cos(game.elapsedTime * 43) * 14 + (Math.random() - 0.5) * 10 : 0;
+  game.aimWorldX = mouse.screenX + game.camX + jitterX;
+  game.aimWorldY = mouse.screenY + game.camY + jitterY;
 
-  if (ladder && (input.up || input.down)) {
+  const shoulderX = hero.x + hero.w / 2;
+  const shoulderY = hero.y + hero.h * 0.42;
+  hero.aimAngle = Math.atan2(game.aimWorldY - shoulderY, game.aimWorldX - shoulderX);
+  hero.facing = Math.cos(hero.aimAngle) >= 0 ? 1 : -1;
+
+  // --- ASTHMA MECHANIC ---
+  // Pressing A or W charges up fatigue; once full -> 1.0s breathing stun on ground!
+  if (hero.traits.asthma) {
+    if (hero.asthmaStun > 0) {
+      hero.asthmaStun = Math.max(0, hero.asthmaStun - DT);
+      hero.animTimer += DT * 10;
+      if (hero.asthmaStun === 0) {
+        hero.asthma = 0;
+        hero.asthmaPending = false;
+      }
+      // Still apply gravity while stunned so he never floats
+      hero.vx = 0;
+      hero.vy = Math.min(hero.vy + GRAVITY * DT, 760);
+      resolveCollisions(world, true);
+      return;
+    }
+
+    if (input.aHeld || input.wHeld) {
+      hero.asthma = Math.min(100, hero.asthma + 42 * DT); // ~2.38s continuous A/W fills bar
+      if (hero.asthma >= 100) {
+        if (hero.grounded || hero.onLadder) {
+          hero.asthmaStun = 1.0;
+          hero.onLadder = false;
+          SFX.beep(180, 0.3, "sine", 0.09, 110);
+          return;
+        } else {
+          // Jumping with A or W -> stunned as soon as feet touch the ground!
+          hero.asthmaPending = true;
+        }
+      }
+    } else if (!hero.asthmaPending) {
+      hero.asthma = Math.max(0, hero.asthma - 58 * DT);
+    }
+  }
+
+  // Ladder check (W / S climbs ladders)
+  const heroCenter = { x: hero.x + 6, y: hero.y + 4, w: hero.w - 12, h: hero.h };
+  const ladder = world.ladders.find(l => rectsOverlap(heroCenter, l));
+
+  if (ladder && (input.wHeld || input.sHeld)) {
     hero.onLadder = true;
     hero.grounded = false;
     hero.vx = 0;
-    hero.vy = input.up ? -climbSpeed : climbSpeed;
+    hero.vy = input.wHeld ? -CLIMB_SPEED : CLIMB_SPEED;
     const targetX = ladder.x + (ladder.w - hero.w) / 2;
     hero.x += (targetX - hero.x) * 0.35;
   } else if (!ladder) {
     hero.onLadder = false;
   }
 
-  // Horizontal movement & facing
-  if (input.left && !input.right) hero.facing = -1;
-  if (input.right && !input.left) hero.facing = 1;
-
+  // Horizontal movement (A / D)
   if (!hero.onLadder) {
-    const moveDir = (input.right ? 1 : 0) - (input.left ? 1 : 0);
+    const moveDir = (input.dHeld ? 1 : 0) - (input.aHeld ? 1 : 0);
     if (hero.invulnTimer < 0.75) {
-      hero.vx = moveDir * walkSpeed;
+      hero.vx = moveDir * WALK_SPEED;
     }
     hero.vy = Math.min(hero.vy + GRAVITY * DT, 760);
-  } else if (!input.up && !input.down) {
+  } else if (!input.wHeld && !input.sHeld) {
     hero.vy = 0;
-    const moveDir = (input.right ? 1 : 0) - (input.left ? 1 : 0);
-    hero.vx = moveDir * walkSpeed * 0.75;
+    const moveDir = (input.dHeld ? 1 : 0) - (input.aHeld ? 1 : 0);
+    hero.vx = moveDir * WALK_SPEED * 0.75;
   }
 
-  // Jump / Drop through ledge
-  if (input.jumpPressed && input.down && hero.grounded && !hero.onLadder) {
+  // Jump (W or Space when grounded; S + Jump drops through one-way ledges)
+  if (input.jumpPressed && input.sHeld && hero.grounded && !hero.onLadder) {
     hero.dropThroughTimer = 0.18;
     hero.grounded = false;
     hero.y += 4;
-  } else if (input.jumpPressed && (hero.grounded || hero.onLadder)) {
-    hero.onLadder = false;
+  } else if (input.jumpPressed && hero.grounded && !hero.onLadder) {
     hero.grounded = false;
-    hero.vy = jumpVel;
+    hero.vy = JUMP_VEL;
     SFX.beep(320, 0.11, "square", 0.06, 540);
   }
 
-  // Move X & resolve solid walls
+  resolveCollisions(world, false);
+
+  // Trigger deferred Asthma stun the instant hero lands from a jump!
+  if (hero.traits.asthma && hero.asthmaPending && hero.grounded) {
+    hero.asthmaPending = false;
+    hero.asthmaStun = 1.0;
+    hero.vx = 0;
+    SFX.beep(180, 0.3, "sine", 0.09, 110);
+    return;
+  }
+
+  // Animation state
+  if (hero.onLadder) {
+    hero.animState = "CLIMB";
+    if (Math.abs(hero.vy) > 1) hero.animTimer += DT * 9;
+  } else if (!hero.grounded) {
+    hero.animState = "JUMP";
+  } else if (Math.abs(hero.vx) > 5) {
+    hero.animState = "RUN";
+    hero.animTimer += DT * 12;
+  } else {
+    hero.animState = "IDLE";
+    hero.animTimer = 0;
+  }
+
+  // Weapon firing toward cursor aim mark
+  const spreadAngle = hero.traits.tremor ? (Math.random() - 0.5) * 0.32 : 0; // +/- 9 deg if Tremor
+  const fireAngle = hero.aimAngle + spreadAngle;
+  const dirX = Math.cos(fireAngle);
+  const dirY = Math.sin(fireAngle);
+  const muzzleX = shoulderX + dirX * 18;
+  const muzzleY = shoulderY + dirY * 18;
+
+  // 1) Machine Gun: Fast fixed-impulse projectile; after 75% of half-screen travel,
+  //    gravity pulls it down so it curves and hits the ground!
+  if (input.gunHeld && hero.gunCooldown <= 0) {
+    hero.gunCooldown = 0.11;
+    const bulletSpeed = 660;
+    game.bullets.push({
+      x: muzzleX,
+      y: muzzleY,
+      vx: dirX * bulletSpeed,
+      vy: dirY * bulletSpeed,
+      traveled: 0,
+      dropStartDist: HALF_W * 0.75, // 369 px (75% of half-screen travel)
+      damage: 10
+    });
+    SFX.beep(780, 0.045, "square", 0.05, 320);
+  }
+
+  // 2) Chicken Bone Throw (4 per chicken eaten; infinite travel until wall/floor or enemy)
+  if (input.bonePressed && hero.bones > 0) {
+    hero.bones--;
+    const boneSpeed = 480;
+    game.bones.push({
+      x: muzzleX,
+      y: muzzleY - 4,
+      vx: dirX * boneSpeed + hero.vx * 0.15,
+      vy: dirY * boneSpeed - 150,
+      rot: 0,
+      damage: 55
+    });
+    SFX.beep(440, 0.12, "triangle", 0.09, 680);
+  }
+
+  // 3) Hat Mini-Missile (Unlimited ammo with cooldown once collected)
+  if (input.hatPressed && hero.hasMissileHat && hero.hatCooldown <= 0) {
+    hero.hatCooldown = hero.hatMaxCooldown;
+    game.missiles.push({
+      x: shoulderX,
+      y: hero.y - 4,
+      vx: dirX * 520,
+      vy: dirY * 520 - 70,
+      targetVx: dirX * 560,
+      targetVy: dirY * 560,
+      timer: 0,
+      damage: 110,
+      splashRadius: 74
+    });
+    SFX.beep(260, 0.22, "sawtooth", 0.1, 720);
+  }
+}
+
+function resolveCollisions(world, stunned) {
   hero.x += hero.vx * DT;
-  for (const s of room.solids) {
+  for (const s of world.solids) {
     if (rectsOverlap(hero, s)) {
       if (hero.vx > 0) hero.x = s.x - hero.w;
       else if (hero.vx < 0) hero.x = s.x + s.w;
@@ -782,12 +1023,11 @@ function stepHero(input, room) {
     }
   }
 
-  // Move Y & resolve solid floors + one-way ledges
   const prevBottom = hero.y + hero.h;
   hero.y += hero.vy * DT;
   hero.grounded = false;
 
-  for (const s of room.solids) {
+  for (const s of world.solids) {
     if (rectsOverlap(hero, s)) {
       if (hero.vy > 0) {
         hero.y = s.y - hero.h;
@@ -800,8 +1040,8 @@ function stepHero(input, room) {
     }
   }
 
-  if (!hero.onLadder && hero.vy >= 0 && hero.dropThroughTimer <= 0) {
-    for (const p of room.oneWay) {
+  if (!hero.onLadder && hero.vy >= 0 && (stunned || hero.dropThroughTimer <= 0)) {
+    for (const p of world.oneWay) {
       if (
         hero.x + hero.w > p.x &&
         hero.x < p.x + p.w &&
@@ -814,108 +1054,17 @@ function stepHero(input, room) {
       }
     }
   }
-
-  // Pit fall recovery
-  if (hero.y > H + 20) {
-    damageHero(35, -hero.facing);
-    hero.x = 80;
-    hero.y = 480;
-    hero.vx = 0;
-    hero.vy = 0;
-  }
-
-  // Flip-screen edge transitions
-  const cx = hero.x + hero.w / 2;
-  if (cx > W && room.exits.right !== undefined) {
-    startRoomTransition(room.exits.right, 1, 24, hero.y);
-    return;
-  } else if (cx < 0 && room.exits.left !== undefined) {
-    startRoomTransition(room.exits.left, -1, W - hero.w - 24, hero.y);
-    return;
-  }
-  hero.x = Math.max(0, Math.min(W - hero.w, hero.x));
-
-  // Animation state
-  if (hero.onLadder) {
-    hero.animState = "CLIMB";
-    if (Math.abs(hero.vy) > 1) hero.animTimer += DT * (hero.traits.wheeled ? 5 : 9);
-  } else if (!hero.grounded) {
-    hero.animState = "JUMP";
-  } else if (Math.abs(hero.vx) > 5) {
-    hero.animState = "RUN";
-    hero.animTimer += DT * (hero.traits.wheeled ? 18 : 12);
-  } else {
-    hero.animState = "IDLE";
-    hero.animTimer = 0;
-  }
-
-  // 5-angle aim
-  const aim = resolveAimVector(input);
-
-  // Wheeled hunter uses both hands to carry weapon & wheelchair on ladders -> cannot shoot on ladder!
-  const canFireWeapons = !(hero.traits.wheeled && hero.onLadder);
-  if (!canFireWeapons) return;
-
-  const muzzleX = hero.x + hero.w / 2 + aim.vx * 16;
-  const muzzleY = hero.y + hero.h * 0.45 + aim.vy * 16;
-
-  // 1) Machine Gun (Half-screen range = HALF_W)
-  if (input.gunHeld && hero.gunCooldown <= 0) {
-    hero.gunCooldown = 0.11;
-    const bulletSpeed = 640;
-    game.bullets.push({
-      x: muzzleX, y: muzzleY,
-      vx: aim.vx * bulletSpeed, vy: aim.vy * bulletSpeed,
-      traveled: 0, maxRange: HALF_W, damage: 10
-    });
-    SFX.beep(780, 0.045, "square", 0.05, 320);
-  }
-
-  // 2) Chicken Bone Throw (Infinite range until wall or enemy)
-  if (input.bonePressed && hero.bones > 0) {
-    hero.bones--;
-    const throwSpeed = 420;
-    game.bones.push({
-      x: muzzleX, y: muzzleY - 4,
-      vx: aim.vx * throwSpeed + hero.vx * 0.2,
-      vy: aim.vy * throwSpeed - 190,
-      rot: 0, damage: 55
-    });
-    SFX.beep(440, 0.12, "triangle", 0.09, 680);
-  }
-
-  // 3) Mini-Missile Hat (Cooldown weapon)
-  if (input.hatPressed && hero.hasMissileHat && hero.hatCooldown <= 0) {
-    hero.hatCooldown = hero.hatMaxCooldown;
-    game.missiles.push({
-      x: hero.x + hero.w / 2, y: hero.y - 4,
-      vx: aim.vx * 520, vy: aim.vy * 520 - 80,
-      targetVx: aim.vx * 560, targetVy: aim.vy * 560,
-      timer: 0, damage: 110, splashRadius: 72
-    });
-    SFX.beep(260, 0.22, "sawtooth", 0.1, 720);
-  }
 }
 
-function startRoomTransition(toIdx, dirX, nextHeroX, nextHeroY) {
-  game.state = "TRANSITION";
-  game.transition = {
-    active: true, fromIdx: game.roomIdx, toIdx, dirX,
-    t: 0, duration: 0.32, nextHeroX, nextHeroY
-  };
-  game.bullets.length = 0;
-  game.bones.length = 0;
-  game.missiles.length = 0;
-}
-
-function stepProjectilesAndPickups(room) {
-  for (const p of room.pickups) {
+function stepProjectilesAndPickups(world) {
+  for (const p of world.pickups) {
     if (p.collected) continue;
     if (rectsOverlap(hero, p)) {
       p.collected = true;
       if (p.type === "chicken") {
         hero.hp = Math.min(hero.maxHp, hero.hp + 45);
         hero.bones = 4;
+        hero.asthma = 0;
         game.score += 200;
         spawnParticles(p.x + p.w / 2, p.y + p.h / 2, "#e08a2e", 10, 140);
         SFX.beep(520, 0.18, "triangle", 0.1, 880);
@@ -925,12 +1074,12 @@ function stepProjectilesAndPickups(room) {
         game.score += 500;
         spawnParticles(p.x + p.w / 2, p.y + p.h / 2, "#f5c518", 14, 160);
         SFX.beep(440, 0.25, "square", 0.1, 990);
-      } else if (p.type === "gem") {
-        game.score += 300;
-        spawnParticles(p.x + p.w / 2, p.y + p.h / 2, "#29b6f6", 10, 140);
+      } else if (p.type === "crown") {
+        game.score += 250;
+        spawnParticles(p.x + p.w / 2, p.y + p.h / 2, "#dc2626", 10, 140);
         SFX.beep(660, 0.14, "sine", 0.1, 1040);
       } else if (p.type === "treasure") {
-        const diffBonus = setup.difficulty === "HARD" ? 3000 : 1000;
+        const diffBonus = setup.difficulty === "ULTIMATE" ? 6000 : (setup.difficulty === "HARD" ? 3000 : 1000);
         game.score += 2000 + diffBonus + Math.floor(game.stageTimer) * 5;
         spawnParticles(p.x + p.w / 2, p.y + p.h / 2, "#ffd700", 24, 220);
         SFX.beep(523, 0.4, "square", 0.12, 1046);
@@ -939,29 +1088,30 @@ function stepProjectilesAndPickups(room) {
     }
   }
 
+  // 1) Machine Gun Bullets: Fixed launch force; after 75% travel, gravity pulls it down into the floor!
   for (let i = game.bullets.length - 1; i >= 0; i--) {
     const b = game.bullets[i];
+    if (b.traveled >= b.dropStartDist) {
+      b.vy += 1850 * DT; // Starts falling noticeably after 75% travel
+    } else {
+      b.vy += 90 * DT;   // Slight ballistic droop during initial flight
+    }
+
     const stepX = b.vx * DT;
     const stepY = b.vy * DT;
     b.x += stepX;
     b.y += stepY;
     b.traveled += Math.hypot(stepX, stepY);
 
-    if (b.traveled >= b.maxRange) {
-      spawnParticles(b.x, b.y, "#64748b", 3, 60);
-      game.bullets.splice(i, 1);
-      continue;
-    }
-
-    const hitSolid = room.solids.some(s => b.x >= s.x && b.x <= s.x + s.w && b.y >= s.y && b.y <= s.y + s.h);
-    if (hitSolid) {
+    const hitSolid = world.solids.some(s => b.x >= s.x && b.x <= s.x + s.w && b.y >= s.y && b.y <= s.y + s.h);
+    if (hitSolid || b.y > WORLD_H) {
       spawnParticles(b.x, b.y, "#1e3a8a", 4, 80);
       game.bullets.splice(i, 1);
       continue;
     }
 
     let hitEnemy = false;
-    for (const e of room.enemies) {
+    for (const e of world.enemies) {
       if (!e.alive) continue;
       if (b.x >= e.x && b.x <= e.x + e.w && b.y >= e.y && b.y <= e.y + e.h) {
         damageEnemy(e, b.damage, b.x, b.y);
@@ -972,20 +1122,16 @@ function stepProjectilesAndPickups(room) {
     if (hitEnemy) game.bullets.splice(i, 1);
   }
 
+  // 2) Thrown Chicken Bones (Infinite range across the entire stage until hitting wall/floor or enemy!)
   for (let i = game.bones.length - 1; i >= 0; i--) {
     const bone = game.bones[i];
-    bone.vy += 860 * DT;
+    bone.vy += 760 * DT;
     bone.x += bone.vx * DT;
     bone.y += bone.vy * DT;
     bone.rot += 15 * DT;
 
-    if (bone.y > H + 80) {
-      game.bones.splice(i, 1);
-      continue;
-    }
-
-    const hitSolid = room.solids.some(s => bone.x >= s.x && bone.x <= s.x + s.w && bone.y >= s.y && bone.y <= s.y + s.h);
-    if (hitSolid) {
+    const hitSolid = world.solids.some(s => bone.x >= s.x && bone.x <= s.x + s.w && bone.y >= s.y && bone.y <= s.y + s.h);
+    if (hitSolid || bone.y > WORLD_H) {
       spawnParticles(bone.x, bone.y, "#f8fafc", 8, 130);
       SFX.beep(220, 0.08, "triangle", 0.07, 120);
       game.bones.splice(i, 1);
@@ -993,7 +1139,7 @@ function stepProjectilesAndPickups(room) {
     }
 
     let hitEnemy = false;
-    for (const e of room.enemies) {
+    for (const e of world.enemies) {
       if (!e.alive) continue;
       if (bone.x >= e.x - 6 && bone.x <= e.x + e.w + 6 && bone.y >= e.y - 6 && bone.y <= e.y + e.h + 6) {
         damageEnemy(e, bone.damage, bone.x, bone.y);
@@ -1005,6 +1151,7 @@ function stepProjectilesAndPickups(room) {
     if (hitEnemy) game.bones.splice(i, 1);
   }
 
+  // 3) Hat Mini-Missiles
   for (let i = game.missiles.length - 1; i >= 0; i--) {
     const m = game.missiles[i];
     m.timer += DT;
@@ -1019,15 +1166,15 @@ function stepProjectilesAndPickups(room) {
       spawnParticles(m.x, m.y, "#fb923c", 2, 40);
     }
 
-    const outOfBounds = m.x < -30 || m.x > W + 30 || m.y < -30 || m.y > H + 30;
-    const hitSolid = room.solids.some(s => m.x >= s.x && m.x <= s.x + s.w && m.y >= s.y && m.y <= s.y + s.h);
-    const hitEnemy = room.enemies.some(e => e.alive && m.x >= e.x && m.x <= e.x + e.w && m.y >= e.y && m.y <= e.y + e.h);
+    const outOfWorld = m.x < 0 || m.x > WORLD_W || m.y < 0 || m.y > WORLD_H;
+    const hitSolid = world.solids.some(s => m.x >= s.x && m.x <= s.x + s.w && m.y >= s.y && m.y <= s.y + s.h);
+    const hitEnemy = world.enemies.some(e => e.alive && m.x >= e.x && m.x <= e.x + e.w && m.y >= e.y && m.y <= e.y + e.h);
 
-    if (outOfBounds || hitSolid || hitEnemy) {
+    if (outOfWorld || hitSolid || hitEnemy) {
       game.shakeTimer = 0.22;
       spawnParticles(m.x, m.y, "#ef4444", 18, 230);
       SFX.beep(110, 0.26, "sawtooth", 0.14, 42);
-      for (const e of room.enemies) {
+      for (const e of world.enemies) {
         if (!e.alive) continue;
         const dist = Math.hypot(e.x + e.w / 2 - m.x, e.y + e.h / 2 - m.y);
         if (dist <= m.splashRadius + e.w * 0.5) {
@@ -1053,38 +1200,48 @@ function damageEnemy(enemy, dmg, hitX, hitY) {
   }
 }
 
-function stepEnemies(room) {
-  for (const e of room.enemies) {
+function stepEnemies(world) {
+  for (const e of world.enemies) {
     if (!e.alive) continue;
     if (e.hurtTimer > 0) e.hurtTimer = Math.max(0, e.hurtTimer - DT);
 
-    if (e.kind === "crawler") {
+    if (e.kind === "blade") {
       e.animTimer += DT;
       e.x += e.vx * DT;
       if (e.x <= e.minX) { e.x = e.minX; e.vx = Math.abs(e.vx); e.facing = 1; }
       if (e.x + e.w >= e.maxX) { e.x = e.maxX - e.w; e.vx = -Math.abs(e.vx); e.facing = -1; }
+
+      const dist = Math.abs((hero.x + hero.w / 2) - (e.x + e.w / 2));
+      const sameFloor = Math.abs((hero.y + hero.h) - (e.y + e.h)) < 60;
+      if (dist < 68 && sameFloor) {
+        e.facing = hero.x < e.x ? -1 : 1;
+        e.slashTimer = 0.22;
+      } else if (e.slashTimer > 0) {
+        e.slashTimer = Math.max(0, e.slashTimer - DT);
+      }
+
       if (rectsOverlap(hero, e)) {
-        damageHero(15, hero.x < e.x ? -1 : 1);
+        damageHero(16, hero.x < e.x ? -1 : 1);
       }
     } else if (e.kind === "giant") {
       const distToHero = Math.abs((hero.x + hero.w / 2) - (e.x + e.w / 2));
-      const sameHeight = Math.abs((hero.y + hero.h) - (e.y + e.h)) < 75;
+      const sameHeight = Math.abs((hero.y + hero.h) - (e.y + e.h)) < 80;
 
       if (e.aiState === "WALK") {
         e.animTimer += DT;
         e.x += e.vx * DT;
-        e.rodAngle = -0.35 + Math.sin(Math.floor(e.animTimer * 8)) * 0.12;
+        e.weaponAngle = -0.35 + Math.sin(Math.floor(e.animTimer * 8)) * 0.12;
         if (e.x <= e.minX) { e.x = e.minX; e.vx = Math.abs(e.vx); e.facing = 1; }
         if (e.x + e.w >= e.maxX) { e.x = e.maxX - e.w; e.vx = -Math.abs(e.vx); e.facing = -1; }
 
-        if (distToHero < 105 && sameHeight) {
+        if (distToHero < 110 && sameHeight) {
           e.facing = hero.x < e.x ? -1 : 1;
           e.aiState = "WINDUP";
           e.aiTimer = 0.38;
         }
       } else if (e.aiState === "WINDUP") {
         e.aiTimer -= DT;
-        e.rodAngle = -1.35;
+        e.weaponAngle = -1.35;
         if (e.aiTimer <= 0) {
           e.aiState = "STRIKE";
           e.aiTimer = 0.16;
@@ -1093,15 +1250,15 @@ function stepEnemies(room) {
         }
       } else if (e.aiState === "STRIKE") {
         e.aiTimer -= DT;
-        e.rodAngle = 1.45;
+        e.weaponAngle = 1.45;
         if (!e.struckThisSwing) {
-          const rodBox = {
-            x: e.facing === 1 ? e.x + e.w * 0.5 : e.x + e.w * 0.5 - e.rodLength,
-            y: e.y + e.h * 0.25,
-            w: e.rodLength,
-            h: e.h * 0.72
+          const axeBox = {
+            x: e.facing === 1 ? e.x + e.w * 0.5 : e.x + e.w * 0.5 - e.weaponLength,
+            y: e.y + e.h * 0.22,
+            w: e.weaponLength,
+            h: e.h * 0.75
           };
-          if (rectsOverlap(hero, rodBox)) {
+          if (rectsOverlap(hero, axeBox)) {
             e.struckThisSwing = true;
             damageHero(28, e.facing);
           }
@@ -1112,10 +1269,8 @@ function stepEnemies(room) {
         }
       } else if (e.aiState === "RECOVER") {
         e.aiTimer -= DT;
-        e.rodAngle = 0.9;
-        if (e.aiTimer <= 0) {
-          e.aiState = "WALK";
-        }
+        e.weaponAngle = 0.9;
+        if (e.aiTimer <= 0) e.aiState = "WALK";
       }
 
       if (rectsOverlap(hero, e)) {
@@ -1137,135 +1292,169 @@ function stepParticles() {
 }
 
 /* ============================================================================
- * 9. RENDERING: 楷簿, BLIND SIGHT CIRCLE, HERO & HUNTER SETUP SCREEN
+ * 9. RENDERING: RULED NOTEBOOK SPREADS (DATUM/DATE), SKETCH ENTITIES & AIM MARK
  * ========================================================================== */
-function drawKaaiBouSpread(room, offsetX) {
-  ctx.save();
-  ctx.translate(offsetX, 0);
+function drawNotebookBackground() {
+  // Draw visible 328x207mm notebook spreads in world coordinates
+  const startCol = Math.max(0, Math.floor(game.camX / W));
+  const endCol   = Math.min(SCREENS_X - 1, Math.floor((game.camX + W) / W));
+  const startRow = Math.max(0, Math.floor(game.camY / H));
+  const endRow   = Math.min(SCREENS_Y - 1, Math.floor((game.camY + H) / H));
 
-  const customBg = ASSETS[room.bgAsset];
-  if (customBg && customBg.loaded) {
-    ctx.drawImage(customBg, 0, 0, W, H);
-    ctx.restore();
-    return;
-  }
+  for (let r = startRow; r <= endRow; r++) {
+    for (let c = startCol; c <= endCol; c++) {
+      const sx = c * W;
+      const sy = r * H;
+      const leftPageNum = 24 + (r * SCREENS_X + c) * 2;
+      const rightPageNum = leftPageNum + 1;
 
-  const paperGrad = ctx.createLinearGradient(0, 0, W, 0);
-  paperGrad.addColorStop(0.00, "#f3ebd6");
-  paperGrad.addColorStop(0.47, "#faf5e8");
-  paperGrad.addColorStop(0.50, "#dcd1b8");
-  paperGrad.addColorStop(0.53, "#faf5e8");
-  paperGrad.addColorStop(1.00, "#f3ebd6");
-  ctx.fillStyle = paperGrad;
-  ctx.fillRect(0, 0, W, H);
+      // Off-white notebook paper with center spine crease
+      const grad = ctx.createLinearGradient(sx, sy, sx + W, sy);
+      grad.addColorStop(0.00, "#ede7d8");
+      grad.addColorStop(0.47, "#f7f4eb");
+      grad.addColorStop(0.50, "#d8d0be");
+      grad.addColorStop(0.53, "#f7f4eb");
+      grad.addColorStop(1.00, "#ede7d8");
+      ctx.fillStyle = grad;
+      ctx.fillRect(sx, sy, W, H);
 
-  drawSinglePageGrid(0, room.pageLeft);
-  drawSinglePageGrid(HALF_W, room.pageRight);
+      drawRuledPage(sx, sy, leftPageNum, true);
+      drawRuledPage(sx + HALF_W, sy, rightPageNum, false);
 
-  ctx.strokeStyle = "rgba(85, 75, 60, 0.45)";
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(HALF_W, 0);
-  ctx.lineTo(HALF_W, H);
-  ctx.stroke();
-
-  ctx.fillStyle = "#94a3b8";
-  ctx.fillRect(HALF_W - 2, H * 0.25 - 12, 4, 24);
-  ctx.fillRect(HALF_W - 2, H * 0.75 - 12, 4, 24);
-
-  for (const s of room.solids) {
-    ctx.fillStyle = "#1e3a8a";
-    ctx.fillRect(s.x, s.y, s.w, s.h);
-    ctx.strokeStyle = "#0f172a";
-    ctx.lineWidth = 2;
-    ctx.strokeRect(s.x + 1, s.y + 1, s.w - 2, s.h - 2);
-    ctx.strokeStyle = "rgba(255, 255, 255, 0.16)";
-    ctx.beginPath();
-    for (let hx = s.x + 8; hx < s.x + s.w - 4; hx += 14) {
-      ctx.moveTo(hx, s.y + 3);
-      ctx.lineTo(hx - 6, s.y + s.h - 3);
+      // Center book fold line
+      ctx.strokeStyle = "rgba(80, 75, 65, 0.45)";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(sx + HALF_W, sy);
+      ctx.lineTo(sx + HALF_W, sy + H);
+      ctx.stroke();
     }
-    ctx.stroke();
   }
-
-  for (const p of room.oneWay) {
-    ctx.fillStyle = "#b91c1c";
-    ctx.fillRect(p.x, p.y, p.w, 5);
-    ctx.fillRect(p.x, p.y + 8, p.w, 3);
-  }
-
-  for (const l of room.ladders) {
-    ctx.strokeStyle = "#334155";
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.moveTo(l.x + 4, l.y);
-    ctx.lineTo(l.x + 4, l.y + l.h);
-    ctx.moveTo(l.x + l.w - 4, l.y);
-    ctx.lineTo(l.x + l.w - 4, l.y + l.h);
-    for (let ry = l.y + 14; ry < l.y + l.h; ry += 22) {
-      ctx.moveTo(l.x + 4, ry);
-      ctx.lineTo(l.x + l.w - 4, ry);
-    }
-    ctx.stroke();
-  }
-
-  ctx.restore();
 }
 
-function drawSinglePageGrid(pageX, pageLabel) {
-  const margin = 10 * SCALE;
-  const headerH = 16 * SCALE;
-  const left = pageX + margin;
-  const top = margin + headerH;
-  const gridW = HALF_W - margin * 2;
-  const gridH = H - top - margin;
-  const cell = 36;
+function drawRuledPage(px, py, pageNum, isLeft) {
+  const padX = 28;
+  const headerY = py + 52;
+  const footerY = py + H - 28;
+  const lineGap = 24;
 
-  ctx.strokeStyle = "rgba(195, 65, 65, 0.65)";
-  ctx.lineWidth = 2;
-  ctx.strokeRect(left, margin, gridW, H - margin * 2);
-  ctx.beginPath();
-  ctx.moveTo(left, top);
-  ctx.lineTo(left + gridW, top);
-  ctx.stroke();
+  // DATUM/DATE header matching your notebook photo
+  ctx.fillStyle = "rgba(110, 115, 125, 0.75)";
+  ctx.font = "11px sans-serif";
+  if (isLeft) {
+    ctx.fillText("DATUM/DATE", px + padX, py + 44);
+  } else {
+    ctx.fillText("DATUM/DATE", px + HALF_W - 145, py + 44);
+  }
 
-  ctx.fillStyle = "rgba(195, 65, 65, 0.72)";
-  ctx.font = "13px serif";
-  ctx.fillText("日期：", left + 10, margin + 30);
-  ctx.fillText("成績：", left + gridW - 115, margin + 30);
-  ctx.fillText("P." + pageLabel, left + gridW / 2 - 14, margin + 30);
-
-  ctx.strokeStyle = "rgba(56, 142, 92, 0.36)";
+  // Horizontal ruled notebook lines
+  ctx.strokeStyle = "rgba(130, 145, 165, 0.35)";
   ctx.lineWidth = 1;
   ctx.beginPath();
-  for (let x = left + cell; x < left + gridW; x += cell) {
-    ctx.moveTo(x, top);
-    ctx.lineTo(x, top + gridH);
-  }
-  for (let y = top + cell; y < top + gridH; y += cell) {
-    ctx.moveTo(left, y);
-    ctx.lineTo(left + gridW, y);
+  for (let y = headerY; y <= footerY; y += lineGap) {
+    ctx.moveTo(px + padX, y);
+    ctx.lineTo(px + HALF_W - padX, y);
   }
   ctx.stroke();
+
+  // Page number at bottom corner (26, 27...)
+  ctx.fillStyle = "rgba(110, 115, 125, 0.8)";
+  ctx.font = "11px monospace";
+  ctx.fillText(String(pageNum), isLeft ? px + padX + 6 : px + HALF_W - padX - 18, footerY + 16);
 }
 
-function drawRoomEntities(room, offsetX) {
-  ctx.save();
-  ctx.translate(offsetX, 0);
+function drawWorldTerrain(world) {
+  // Solid floors & walls (ink lines + diagonal floor hatching just like your drawing!)
+  for (const s of world.solids) {
+    ctx.fillStyle = s.hatched ? "#f2ede0" : "#1e293b";
+    ctx.fillRect(s.x, s.y, s.w, s.h);
 
-  for (const p of room.pickups) {
+    ctx.strokeStyle = "#1e293b";
+    ctx.lineWidth = 2.5;
+    ctx.strokeRect(s.x, s.y, s.w, s.h);
+
+    if (s.hatched) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(s.x, s.y, s.w, s.h);
+      ctx.clip();
+      ctx.strokeStyle = "rgba(30, 41, 59, 0.65)";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      for (let hx = s.x - s.h; hx < s.x + s.w + s.h; hx += 34) {
+        ctx.moveTo(hx + 16, s.y + 4);
+        ctx.lineTo(hx - 12, s.y + s.h - 4);
+      }
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  // One-way ledges (red pen double-lines)
+  for (const p of world.oneWay) {
+    ctx.fillStyle = "#dc2626";
+    ctx.fillRect(p.x, p.y, p.w, 4);
+    ctx.fillRect(p.x, p.y + 7, p.w, 2.5);
+  }
+
+  // Ladders (hand-inked rails + rungs)
+  for (const l of world.ladders) {
+    ctx.strokeStyle = "#1e293b";
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(l.x + 5, l.y);
+    ctx.lineTo(l.x + 5, l.y + l.h);
+    ctx.moveTo(l.x + l.w - 5, l.y);
+    ctx.lineTo(l.x + l.w - 5, l.y + l.h);
+    for (let ry = l.y + 14; ry < l.y + l.h; ry += 22) {
+      ctx.moveTo(l.x + 5, ry);
+      ctx.lineTo(l.x + l.w - 5, ry);
+    }
+    ctx.stroke();
+  }
+}
+
+function drawWorldEntities(world) {
+  // Pickups
+  for (const p of world.pickups) {
     if (p.collected) continue;
-    const bob = Math.sin(performance.now() * 0.006) * 3;
-    if (p.type === "chicken") {
+    const bob = Math.sin(game.elapsedTime * 5) * 3;
+    if (p.type === "crown") {
+      if (ASSETS.crown.loaded) {
+        ctx.drawImage(ASSETS.crown, p.x, p.y + bob, p.w, p.h);
+      } else {
+        // Red ink crown matching your sketch!
+        ctx.strokeStyle = "#dc2626";
+        ctx.lineWidth = 2.2;
+        ctx.beginPath();
+        ctx.moveTo(p.x + 3, p.y + p.h - 3 + bob);
+        ctx.lineTo(p.x + 2, p.y + 5 + bob);
+        ctx.lineTo(p.x + 8, p.y + 11 + bob);
+        ctx.lineTo(p.x + 13, p.y + 2 + bob);
+        ctx.lineTo(p.x + 18, p.y + 11 + bob);
+        ctx.lineTo(p.x + 24, p.y + 5 + bob);
+        ctx.lineTo(p.x + 23, p.y + p.h - 3 + bob);
+        ctx.closePath();
+        ctx.stroke();
+      }
+    } else if (p.type === "chicken") {
       if (ASSETS.chicken.loaded) {
         ctx.drawImage(ASSETS.chicken, p.x, p.y + bob, p.w, p.h);
       } else {
+        // Platter + Roast Chicken drumsticks matching bottom-right of your sketch!
+        ctx.strokeStyle = "#1e293b";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.ellipse(p.x + 17, p.y + 22 + bob, 16, 5, 0, 0, Math.PI * 2);
+        ctx.stroke();
         ctx.fillStyle = "#d97706";
         ctx.beginPath();
-        ctx.ellipse(p.x + 13, p.y + 13 + bob, 11, 8, 0, 0, Math.PI * 2);
+        ctx.ellipse(p.x + 15, p.y + 15 + bob, 11, 7, -0.2, 0, Math.PI * 2);
         ctx.fill();
-        ctx.fillStyle = "#fef3c7";
-        ctx.fillRect(p.x + 21, p.y + 10 + bob, 7, 5);
+        ctx.stroke();
+        ctx.fillStyle = "#fffbeb";
+        ctx.fillRect(p.x + 24, p.y + 9 + bob, 8, 4);
+        ctx.strokeRect(p.x + 24, p.y + 9 + bob, 8, 4);
       }
     } else if (p.type === "hat") {
       if (ASSETS.hat.loaded) {
@@ -1277,15 +1466,6 @@ function drawRoomEntities(room, offsetX) {
         ctx.fillStyle = "#dc2626";
         ctx.fillRect(p.x + 12, p.y + bob, 6, 6);
       }
-    } else if (p.type === "gem") {
-      ctx.fillStyle = "#0284c7";
-      ctx.beginPath();
-      ctx.moveTo(p.x + 11, p.y + bob);
-      ctx.lineTo(p.x + 22, p.y + 11 + bob);
-      ctx.lineTo(p.x + 11, p.y + 22 + bob);
-      ctx.lineTo(p.x, p.y + 11 + bob);
-      ctx.closePath();
-      ctx.fill();
     } else if (p.type === "treasure") {
       if (ASSETS.treasure.loaded) {
         ctx.drawImage(ASSETS.treasure, p.x, p.y, p.w, p.h);
@@ -1294,37 +1474,68 @@ function drawRoomEntities(room, offsetX) {
         ctx.fillRect(p.x, p.y + 8, p.w, p.h - 8);
         ctx.fillStyle = "#fbbf24";
         ctx.fillRect(p.x - 2, p.y + 2, p.w + 4, 9);
-        ctx.strokeStyle = "#78350f";
+        ctx.strokeStyle = "#1e293b";
         ctx.lineWidth = 2;
         ctx.strokeRect(p.x, p.y + 2, p.w, p.h - 2);
       }
     }
   }
 
-  for (const e of room.enemies) {
+  // Enemies
+  for (const e of world.enemies) {
     if (!e.alive) continue;
-    if (e.kind === "crawler") {
-      const step = Math.floor(e.animTimer * 10);
-      const squidge = step % 2 === 0 ? 2 : -2;
-      if (ASSETS.monster.loaded) {
-        ctx.drawImage(ASSETS.monster, e.x, e.y - squidge, e.w, e.h + squidge);
-      } else {
-        ctx.fillStyle = e.hurtTimer > 0 ? "#ef4444" : "#15803d";
-        ctx.fillRect(e.x, e.y + 8 - squidge, e.w, e.h - 8 + squidge);
-        ctx.fillStyle = "#fff";
-        ctx.fillRect(e.facing === 1 ? e.x + 18 : e.x + 6, e.y + 14, 7, 7);
-      }
+    if (e.kind === "blade") {
+      drawBladeEnemy(e);
     } else if (e.kind === "giant") {
-      drawGiant(e);
+      drawAxeGiant(e);
     }
   }
+}
+
+function drawBladeEnemy(e) {
+  const cx = e.x + e.w / 2;
+  const step = Math.sin(e.animTimer * 12) * 5;
+  ctx.save();
+  ctx.strokeStyle = e.hurtTimer > 0 ? "#dc2626" : "#1e293b";
+  ctx.lineWidth = 2.4;
+
+  // Stick-figure head, torso & walking legs matching Page 26 of your sketch
+  ctx.beginPath();
+  ctx.arc(cx, e.y + 9, 7, 0, Math.PI * 2);
+  ctx.moveTo(cx, e.y + 16);
+  ctx.lineTo(cx, e.y + 34);
+  // Legs
+  ctx.moveTo(cx, e.y + 34);
+  ctx.lineTo(cx - 7 + step, e.y + e.h);
+  ctx.moveTo(cx, e.y + 34);
+  ctx.lineTo(cx + 7 - step, e.y + e.h);
+  // Arm holding curved blade upward
+  const handX = cx + e.facing * 10;
+  const handY = e.y + 22;
+  ctx.moveTo(cx, e.y + 21);
+  ctx.lineTo(handX, handY);
+  ctx.stroke();
+
+  // Curved knife / machete blade
+  const slashTilt = e.slashTimer > 0 ? e.facing * 0.9 : 0;
+  ctx.save();
+  ctx.translate(handX, handY);
+  ctx.rotate(slashTilt);
+  ctx.fillStyle = "#cbd5e1";
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.quadraticCurveTo(e.facing * 10, -12, e.facing * 3, -22);
+  ctx.lineTo(-e.facing * 2, -2);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
 
   ctx.restore();
 }
 
-function drawGiant(g) {
+function drawAxeGiant(g) {
   ctx.save();
-  ctx.imageSmoothingEnabled = false;
   const step = Math.floor(g.animTimer * 9);
   const bobY = g.aiState === "WALK" ? (step % 2 === 0 ? -4 : 0) : 0;
   const tilt = g.aiState === "WALK" ? (step % 2 === 0 ? -0.05 : 0.05) : (g.aiState === "WINDUP" ? -0.14 : 0.08);
@@ -1336,36 +1547,73 @@ function drawGiant(g) {
   if (ASSETS.giant.loaded) {
     ctx.drawImage(ASSETS.giant, -g.w / 2, -g.h, g.w, g.h);
   } else {
-    ctx.fillStyle = g.hurtTimer > 0 ? "#ef4444" : "#475569";
-    ctx.fillRect(-g.w / 2, -g.h + 22, g.w, g.h - 22);
-    ctx.fillStyle = "#cbd5e1";
-    ctx.fillRect(-16, -g.h, 32, 24);
-    ctx.fillStyle = "#dc2626";
-    ctx.fillRect(4, -g.h + 7, 8, 5);
+    // Broad-shouldered ink Giant matching Page 27 of your sketch!
+    ctx.strokeStyle = g.hurtTimer > 0 ? "#dc2626" : "#1e293b";
+    ctx.fillStyle = g.hurtTimer > 0 ? "#fecaca" : "#e2e8f0";
+    ctx.lineWidth = 2.6;
+
+    // Thick blocky legs
+    ctx.fillRect(-18, -32, 13, 32);
+    ctx.strokeRect(-18, -32, 13, 32);
+    ctx.fillRect(5, -32, 13, 32);
+    ctx.strokeRect(5, -32, 13, 32);
+
+    // Broad muscular torso
+    ctx.fillRect(-24, -76, 48, 44);
+    ctx.strokeRect(-24, -76, 48, 44);
+
+    // Back arm
+    ctx.strokeRect(-33, -72, 9, 32);
+
+    // Round grumpy head
+    ctx.beginPath();
+    ctx.arc(0, -88, 13, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    // Eyes & frown
+    ctx.beginPath();
+    ctx.moveTo(-6, -91); ctx.lineTo(-2, -91);
+    ctx.moveTo(2, -91);  ctx.lineTo(6, -91);
+    ctx.moveTo(-5, -82); ctx.lineTo(5, -83);
+    ctx.stroke();
   }
 
+  // Giant Battle-Axe
   ctx.save();
-  ctx.translate(8, -g.h * 0.56);
-  ctx.rotate(g.rodAngle);
-  if (ASSETS.giantRod.loaded) {
-    ctx.drawImage(ASSETS.giantRod, -6, -g.rodLength, 14, g.rodLength);
+  ctx.translate(18, -62);
+  ctx.rotate(g.weaponAngle);
+  if (ASSETS.giantAxe.loaded) {
+    ctx.drawImage(ASSETS.giantAxe, -6, -g.weaponLength, 26, g.weaponLength);
   } else {
-    ctx.fillStyle = "#f59e0b";
-    ctx.fillRect(-5, -g.rodLength, 12, g.rodLength);
-    ctx.strokeStyle = "#78350f";
-    ctx.lineWidth = 2;
-    ctx.strokeRect(-5, -g.rodLength, 12, g.rodLength);
+    ctx.strokeStyle = "#1e293b";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(0, 10);
+    ctx.lineTo(0, -g.weaponLength);
+    ctx.stroke();
+
+    // Double/broad axe head
+    ctx.fillStyle = "#94a3b8";
+    ctx.beginPath();
+    ctx.moveTo(0, -g.weaponLength + 4);
+    ctx.lineTo(22, -g.weaponLength - 8);
+    ctx.quadraticCurveTo(26, -g.weaponLength + 10, 20, -g.weaponLength + 24);
+    ctx.lineTo(0, -g.weaponLength + 16);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
   }
   if (g.aiState === "STRIKE") {
-    ctx.strokeStyle = "rgba(239, 68, 68, 0.75)";
-    ctx.lineWidth = 6;
+    ctx.strokeStyle = "rgba(220, 38, 38, 0.7)";
+    ctx.lineWidth = 5;
     ctx.beginPath();
-    ctx.arc(0, 0, g.rodLength, -1.7, 0.3);
+    ctx.arc(0, 0, g.weaponLength, -1.7, 0.3);
     ctx.stroke();
   }
   ctx.restore();
   ctx.restore();
 
+  // Giant HP bar
   ctx.fillStyle = "#1e293b";
   ctx.fillRect(g.x, g.y - 12, g.w, 6);
   ctx.fillStyle = "#dc2626";
@@ -1377,49 +1625,62 @@ function drawHero() {
 
   ctx.save();
   const cx = hero.x + hero.w / 2;
-  const swing = hero.animState === "RUN" ? Math.sin(hero.animTimer) * 5 : 0;
+  const swing = hero.animState === "RUN" ? Math.sin(hero.animTimer) * 6 : 0;
+  const pantOffset = hero.asthmaStun > 0 ? Math.sin(hero.animTimer * 2.5) * 3 : 0;
 
   if (ASSETS.hero.loaded) {
     ctx.translate(cx, hero.y + hero.h);
     ctx.scale(hero.facing, 1);
     ctx.drawImage(ASSETS.hero, -hero.w / 2, -hero.h, hero.w, hero.h);
   } else {
-    // Legs (silver metallic tint if Prosthesis trait is active)
-    ctx.fillStyle = hero.traits.prosthesis ? "#94a3b8" : "#1e3a8a";
-    ctx.fillRect(cx - 7 + swing, hero.y + 30, 5, 14);
-    ctx.fillRect(cx + 2 - swing, hero.y + 30, 5, 14);
+    // Ink stick-figure adventurer matching left side of Page 26 in your sketch!
+    ctx.strokeStyle = "#1e293b";
+    ctx.lineWidth = 2.4;
 
-    // Coat / Torso
-    ctx.fillStyle = "#b45309";
-    ctx.fillRect(cx - 9, hero.y + 15, 18, 16);
+    // Legs (metallic gray if Prosthesis trait is active)
+    ctx.strokeStyle = hero.traits.prosthesis ? "#64748b" : "#1e293b";
+    ctx.beginPath();
+    ctx.moveTo(cx, hero.y + 32 + pantOffset);
+    ctx.lineTo(cx - 7 + swing, hero.y + hero.h);
+    ctx.moveTo(cx, hero.y + 32 + pantOffset);
+    ctx.lineTo(cx + 7 - swing, hero.y + hero.h);
+    ctx.stroke();
 
-    // Head + Dark Sunglasses (if Blind trait is active)
-    ctx.fillStyle = "#f3c69f";
-    ctx.fillRect(cx - 7, hero.y + 3, 14, 12);
+    // Torso & collar/scarf
+    ctx.strokeStyle = "#1e293b";
+    ctx.beginPath();
+    ctx.moveTo(cx, hero.y + 15 + pantOffset);
+    ctx.lineTo(cx, hero.y + 32 + pantOffset);
+    ctx.stroke();
+
+    // Head
+    ctx.fillStyle = "#f7f4eb";
+    ctx.beginPath();
+    ctx.arc(cx, hero.y + 8 + pantOffset, 7.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    // Dark sunglasses if Blind trait is active
     if (hero.traits.blind) {
       ctx.fillStyle = "#0f172a";
-      ctx.fillRect(hero.facing === 1 ? cx - 2 : cx - 7, hero.y + 6, 9, 4);
-    } else {
-      ctx.fillStyle = "#0f172a";
-      ctx.fillRect(hero.facing === 1 ? cx + 2 : cx - 5, hero.y + 6, 3, 3);
+      ctx.fillRect(hero.facing === 1 ? cx - 1 : cx - 7, hero.y + 6 + pantOffset, 8, 4);
     }
+  }
 
-    // Wheelchair visual (if Wheeled trait is active)
-    if (hero.traits.wheeled) {
-      if (hero.onLadder) {
-        // Strapped on back while climbing ladder with both hands
-        ctx.strokeStyle = "#334155";
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.arc(cx - hero.facing * 8, hero.y + 24, 8, 0, Math.PI * 2);
-        ctx.stroke();
-      } else {
-        ctx.strokeStyle = "#1e293b";
-        ctx.lineWidth = 2.5;
-        ctx.beginPath();
-        ctx.arc(cx, hero.y + 36, 9, 0, Math.PI * 2);
-        ctx.stroke();
-      }
+  // Asthma Fatigue Bar & Breathing Stun Indicator above Hero
+  if (hero.traits.asthma && (hero.asthma > 2 || hero.asthmaStun > 0)) {
+    const barW = 36;
+    ctx.fillStyle = "#0f172a";
+    ctx.fillRect(cx - barW / 2, hero.y - 16, barW, 5);
+    ctx.fillStyle = hero.asthmaStun > 0 ? "#ef4444" : (hero.asthmaPending ? "#f59e0b" : "#38bdf8");
+    ctx.fillRect(cx - barW / 2 + 1, hero.y - 15, (barW - 2) * (hero.asthma / 100), 3);
+
+    if (hero.asthmaStun > 0) {
+      ctx.fillStyle = "#dc2626";
+      ctx.font = "bold 11px monospace";
+      ctx.textAlign = "center";
+      ctx.fillText("GASP!", cx, hero.y - 22);
+      ctx.textAlign = "left";
     }
   }
 
@@ -1427,36 +1688,24 @@ function drawHero() {
   if (hero.hasMissileHat) {
     const ready = hero.hatCooldown <= 0;
     ctx.fillStyle = ready ? "#facc15" : "#854d0e";
-    ctx.fillRect(cx - 10, hero.y - 1, 20, 4);
-    ctx.fillRect(cx - 6, hero.y - 7, 12, 6);
-    if (ready) {
-      ctx.fillStyle = "#ef4444";
-      ctx.fillRect(cx - 2, hero.y - 10, 4, 4);
-    }
+    ctx.fillRect(cx - 10, hero.y - 2 + pantOffset, 20, 4);
+    ctx.fillRect(cx - 6, hero.y - 8 + pantOffset, 12, 6);
   }
 
-  // Machine gun (holstered on back if Wheeled & climbing ladder!)
-  if (hero.traits.wheeled && hero.onLadder) {
-    ctx.save();
-    ctx.translate(cx - hero.facing * 6, hero.y + 22);
-    ctx.rotate(-1.2 * hero.facing);
-    ctx.fillStyle = "#0f172a";
-    ctx.fillRect(-8, -2, 16, 4);
-    ctx.restore();
-  } else {
-    ctx.save();
-    ctx.translate(cx, hero.y + hero.h * 0.45);
-    ctx.rotate(hero.aimAngle);
-    ctx.fillStyle = "#0f172a";
-    ctx.fillRect(2, -3, 18, 5);
-    ctx.fillRect(6, 2, 4, 5);
-    ctx.restore();
-  }
+  // Machine Gun aimed directly at the cursor mark!
+  ctx.save();
+  ctx.translate(cx, hero.y + hero.h * 0.42 + pantOffset);
+  ctx.rotate(hero.aimAngle);
+  ctx.fillStyle = "#1e3a8a";
+  ctx.fillRect(2, -3, 18, 5);
+  ctx.fillRect(6, 2, 4, 5);
+  ctx.restore();
 
   ctx.restore();
 }
 
-function drawProjectilesAndParticles() {
+function drawProjectilesAndAimMark() {
+  // Machine gun bullets
   ctx.fillStyle = "#1d4ed8";
   for (const b of game.bullets) {
     ctx.beginPath();
@@ -1464,6 +1713,7 @@ function drawProjectilesAndParticles() {
     ctx.fill();
   }
 
+  // Spinning chicken bones
   for (const bone of game.bones) {
     ctx.save();
     ctx.translate(bone.x, bone.y);
@@ -1486,6 +1736,7 @@ function drawProjectilesAndParticles() {
     ctx.restore();
   }
 
+  // Hat mini-missiles
   for (const m of game.missiles) {
     ctx.save();
     ctx.translate(m.x, m.y);
@@ -1497,20 +1748,37 @@ function drawProjectilesAndParticles() {
     ctx.restore();
   }
 
+  // Particles
   for (const p of game.particles) {
     ctx.globalAlpha = Math.max(0, p.life / p.maxLife);
     ctx.fillStyle = p.color;
     ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
   }
   ctx.globalAlpha = 1;
+
+  // On-screen Aim Mark Crosshair (in world coordinates)
+  const ax = game.aimWorldX;
+  const ay = game.aimWorldY;
+  ctx.save();
+  ctx.strokeStyle = hero.traits.tremor ? "#ea580c" : "#dc2626";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(ax, ay, 11, 0, Math.PI * 2);
+  ctx.moveTo(ax - 16, ay); ctx.lineTo(ax - 6, ay);
+  ctx.moveTo(ax + 6, ay);  ctx.lineTo(ax + 16, ay);
+  ctx.moveTo(ax, ay - 16); ctx.lineTo(ax, ay - 6);
+  ctx.moveTo(ax, ay + 6);  ctx.lineTo(ax, ay + 16);
+  ctx.stroke();
+  ctx.restore();
 }
 
 function drawBlindSightMask() {
   if (!hero.traits.blind || game.debug) return;
 
-  const cx = hero.x + hero.w / 2;
-  const cy = hero.y + hero.h * 0.45;
-  const sightRadius = 145;
+  // Convert hero center from world coordinates to screen coordinates
+  const sx = hero.x + hero.w / 2 - game.camX;
+  const sy = hero.y + hero.h * 0.45 - game.camY;
+  const sightRadius = 155;
 
   sightCtx.globalCompositeOperation = "source-over";
   sightCtx.clearRect(0, 0, W, H);
@@ -1518,12 +1786,12 @@ function drawBlindSightMask() {
   sightCtx.fillRect(0, 0, W, H);
 
   sightCtx.globalCompositeOperation = "destination-out";
-  const grad = sightCtx.createRadialGradient(cx, cy, sightRadius * 0.62, cx, cy, sightRadius);
+  const grad = sightCtx.createRadialGradient(sx, sy, sightRadius * 0.62, sx, sy, sightRadius);
   grad.addColorStop(0, "rgba(0, 0, 0, 1)");
   grad.addColorStop(1, "rgba(0, 0, 0, 0)");
   sightCtx.fillStyle = grad;
   sightCtx.beginPath();
-  sightCtx.arc(cx, cy, sightRadius, 0, Math.PI * 2);
+  sightCtx.arc(sx, sy, sightRadius, 0, Math.PI * 2);
   sightCtx.fill();
 
   ctx.drawImage(sightCanvas, 0, 0);
@@ -1533,75 +1801,54 @@ function drawHUD() {
   ctx.fillStyle = "rgba(15, 23, 42, 0.92)";
   ctx.fillRect(0, 0, W, 26);
 
-  // Dynamic 3-Part Hunter Name Badge
   ctx.fillStyle = "#facc15";
   ctx.font = "bold 13px monospace";
   ctx.fillText(`HUNTER: ${hero.identity.splitName} [${hero.identity.zhTag}]`, 12, 17);
 
   // HP Bar
   ctx.fillStyle = "#ef4444";
-  ctx.fillText(`HP:`, 235, 17);
+  ctx.fillText(`HP:`, 255, 17);
   ctx.fillStyle = "#334155";
-  ctx.fillRect(262, 7, 90, 12);
+  ctx.fillRect(282, 7, 86, 12);
   ctx.fillStyle = "#22c55e";
-  ctx.fillRect(262, 7, Math.max(0, hero.hp * 0.9), 12);
+  ctx.fillRect(282, 7, Math.max(0, hero.hp * 0.86), 12);
 
   // Bones & Hat
   ctx.fillStyle = "#fef08a";
-  ctx.fillText(`BONES:${hero.bones}/4`, 366, 17);
+  ctx.fillText(`BONES:${hero.bones}/4`, 380, 17);
 
   if (!hero.hasMissileHat) {
     ctx.fillStyle = "#94a3b8";
-    ctx.fillText(`HAT:--`, 460, 17);
+    ctx.fillText(`HAT:--`, 472, 17);
   } else if (hero.hatCooldown <= 0) {
     ctx.fillStyle = "#facc15";
-    ctx.fillText(`HAT:READY`, 460, 17);
+    ctx.fillText(`HAT:READY`, 472, 17);
   } else {
     ctx.fillStyle = "#fb923c";
-    ctx.fillText(`HAT:${hero.hatCooldown.toFixed(1)}s`, 460, 17);
+    ctx.fillText(`HAT:${hero.hatCooldown.toFixed(1)}s`, 472, 17);
   }
 
   // Mode, Timer, Score & Switch Hunter
   const mins = Math.floor(game.stageTimer / 60);
   const secs = Math.floor(game.stageTimer % 60).toString().padStart(2, "0");
-  ctx.fillStyle = setup.difficulty === "HARD" ? "#f87171" : "#38bdf8";
-  ctx.fillText(`${setup.difficulty}`, 555, 17);
+  ctx.fillStyle = setup.difficulty === "ULTIMATE" ? "#e879f9" : (setup.difficulty === "HARD" ? "#f87171" : "#38bdf8");
+  ctx.fillText(`${setup.difficulty}`, 562, 17);
 
   ctx.fillStyle = game.stageTimer < 60 ? "#f87171" : "#f8fafc";
-  ctx.fillText(`${mins}:${secs}`, 615, 17);
+  ctx.fillText(`${mins}:${secs}`, 638, 17);
 
   ctx.fillStyle = "#f8fafc";
-  ctx.fillText(`SCR:${game.score.toString().padStart(6, "0")}`, 670, 17);
+  ctx.fillText(`SCR:${game.score.toString().padStart(6, "0")}`, 690, 17);
   ctx.fillStyle = "#cbd5e1";
-  ctx.fillText(`[TAB]HUNTER [F2]DBG`, 785, 17);
-
-  if (game.debug) {
-    const room = game.rooms[game.roomIdx];
-    ctx.save();
-    ctx.strokeStyle = "rgba(37, 99, 235, 0.45)";
-    ctx.setLineDash([6, 6]);
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.arc(hero.x + hero.w / 2, hero.y + hero.h * 0.45, HALF_W, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.setLineDash([]);
-
-    ctx.strokeStyle = "#22c55e";
-    for (const s of room.solids) ctx.strokeRect(s.x, s.y, s.w, s.h);
-    ctx.strokeStyle = "#eab308";
-    for (const l of room.ladders) ctx.strokeRect(l.x, l.y, l.w, l.h);
-    ctx.strokeStyle = "#ef4444";
-    ctx.strokeRect(hero.x, hero.y, hero.w, hero.h);
-    ctx.restore();
-  }
+  ctx.fillText(`[TAB]HUNTER [F2]DBG`, 805, 17);
 
   if (game.state === "GAMEOVER" || game.state === "VICTORY") {
-    ctx.fillStyle = "rgba(15, 23, 42, 0.82)";
+    ctx.fillStyle = "rgba(15, 23, 42, 0.84)";
     ctx.fillRect(0, 0, W, H);
     ctx.fillStyle = game.state === "VICTORY" ? "#facc15" : "#f87171";
     ctx.font = "bold 36px monospace";
     ctx.textAlign = "center";
-    ctx.fillText(game.state === "VICTORY" ? "EPISODE TREASURE FOUND!" : "TIME / HP EXHAUSTED", W / 2, H / 2 - 36);
+    ctx.fillText(game.state === "VICTORY" ? "STAGE 1 TREASURE FOUND!" : "TIME / HP EXHAUSTED", W / 2, H / 2 - 36);
     ctx.fillStyle = "#38bdf8";
     ctx.font = "bold 20px monospace";
     ctx.fillText(`HUNTER: ${hero.identity.codeName} (${hero.identity.splitName}) — ${setup.difficulty}`, W / 2, H / 2 + 4);
@@ -1615,113 +1862,103 @@ function drawHUD() {
 function drawSelectScreen() {
   setup.uiBoxes.length = 0;
 
-  // Draw the 楷簿 background spread underneath
-  drawKaaiBouSpread(game.rooms[0], 0);
+  // Render ruled notebook spread underneath
+  ctx.save();
+  game.camX = 0;
+  game.camY = 0;
+  drawNotebookBackground();
+  ctx.restore();
 
-  // Translucent ink card overlay
-  ctx.fillStyle = "rgba(15, 23, 42, 0.86)";
-  ctx.fillRect(36, 24, W - 72, H - 48);
+  ctx.fillStyle = "rgba(15, 23, 42, 0.88)";
+  ctx.fillRect(32, 20, W - 64, H - 40);
   ctx.strokeStyle = "#facc15";
   ctx.lineWidth = 2;
-  ctx.strokeRect(36, 24, W - 72, H - 48);
+  ctx.strokeRect(32, 20, W - 64, H - 40);
 
   ctx.textAlign = "center";
   ctx.fillStyle = "#facc15";
-  ctx.font = "bold 26px monospace";
-  ctx.fillText("UNBOUND RELICS  無界尋寶錄", W / 2, 62);
+  ctx.font = "bold 25px monospace";
+  ctx.fillText("UNBOUND RELICS  無界尋寶錄", W / 2, 54);
 
   ctx.fillStyle = "#cbd5e1";
-  ctx.font = "14px monospace";
-  ctx.fillText("SELECT DIFFICULTY & TRAITS (NORMAL = PICK 1  |  HARD = PICK 3 IN ORDER)", W / 2, 86);
+  ctx.font = "13px monospace";
+  ctx.fillText("ASDW MOVE/JUMP/LADDER  |  MOUSE AIM + L-CLICK GUN  |  R-CLICK BONE  |  F HAT MISSILE", W / 2, 76);
 
-  // Difficulty Buttons
+  // Difficulty Buttons: NORMAL (1), HARD (3), ULTIMATE (ALL 5)
   const diffBtns = [
-    { id: "NORMAL", label: "NORMAL (1 TRAIT) [N]", x: W / 2 - 250, y: 102, w: 235, h: 38 },
-    { id: "HARD",   label: "HARD (3 TRAITS) [H]",  x: W / 2 + 15,  y: 102, w: 235, h: 38 }
+    { id: "NORMAL",   label: "NORMAL (1) [N]",   x: W / 2 - 345, y: 92, w: 216, h: 36 },
+    { id: "HARD",     label: "HARD (3) [H]",     x: W / 2 - 108, y: 92, w: 216, h: 36 },
+    { id: "ULTIMATE", label: "ULTIMATE (5) [U]", x: W / 2 + 129, y: 92, w: 216, h: 36 }
   ];
 
   for (const b of diffBtns) {
     const active = setup.difficulty === b.id;
-    ctx.fillStyle = active ? "#eab308" : "#1e293b";
+    ctx.fillStyle = active ? (b.id === "ULTIMATE" ? "#c026d3" : "#eab308") : "#1e293b";
     ctx.fillRect(b.x, b.y, b.w, b.h);
     ctx.strokeStyle = active ? "#fef08a" : "#64748b";
     ctx.lineWidth = 2;
     ctx.strokeRect(b.x, b.y, b.w, b.h);
 
-    ctx.fillStyle = active ? "#0f172a" : "#f8fafc";
-    ctx.font = "bold 15px monospace";
-    ctx.fillText(b.label, b.x + b.w / 2, b.y + 24);
+    ctx.fillStyle = active ? (b.id === "ULTIMATE" ? "#ffffff" : "#0f172a") : "#f8fafc";
+    ctx.font = "bold 14px monospace";
+    ctx.fillText(b.label, b.x + b.w / 2, b.y + 23);
 
     setup.uiBoxes.push({
       x: b.x, y: b.y, w: b.w, h: b.h,
-      onClick: () => {
-        setup.difficulty = b.id;
-        if (b.id === "NORMAL" && setup.selected.length > 1) {
-          setup.selected = [setup.selected[0]];
-        }
-      }
+      onClick: () => setDifficulty(b.id)
     });
   }
 
-  // 4 Trait Cards (2x2 Grid)
-  const cardW = 420;
-  const cardH = 116;
-  const startX = 60;
-  const startY = 158;
+  // 5 Trait Cards
+  const cardW = 428;
+  const cardH = 82;
+  const startX = 52;
+  const startY = 142;
   const gapX = 24;
-  const gapY = 16;
+  const gapY = 12;
 
   TRAIT_ORDER.forEach((traitId, idx) => {
     const t = TRAIT_DEFS[traitId];
     const col = idx % 2;
     const row = Math.floor(idx / 2);
-    const cx = startX + col * (cardW + gapX);
+    const cx = idx === 4 ? W / 2 - cardW / 2 : startX + col * (cardW + gapX);
     const cy = startY + row * (cardH + gapY);
 
-    const pickOrder = setup.selected.indexOf(traitId); // 0, 1, 2, or -1
+    const pickOrder = setup.selected.indexOf(traitId);
     const isSelected = pickOrder !== -1;
 
-    ctx.fillStyle = isSelected ? "rgba(30, 58, 138, 0.9)" : "rgba(30, 41, 59, 0.9)";
+    ctx.fillStyle = isSelected ? "rgba(30, 58, 138, 0.92)" : "rgba(30, 41, 59, 0.9)";
     ctx.fillRect(cx, cy, cardW, cardH);
     ctx.strokeStyle = isSelected ? "#facc15" : "#475569";
-    ctx.lineWidth = isSelected ? 3 : 1.5;
+    ctx.lineWidth = isSelected ? 2.5 : 1.5;
     ctx.strokeRect(cx, cy, cardW, cardH);
 
-    // Highlight which syllable part is active for this slot
     ctx.textAlign = "left";
-    ctx.font = "bold 20px monospace";
-    let partX = cx + 16;
+    ctx.font = "bold 18px monospace";
+    let partX = cx + 14;
     t.parts.forEach((part, pIdx) => {
-      const contributes = isSelected && (setup.difficulty === "NORMAL" || pickOrder === pIdx);
+      const contributes = isSelected && (
+        setup.difficulty === "NORMAL" ||
+        (setup.difficulty === "HARD" && pickOrder === pIdx) ||
+        setup.difficulty === "ULTIMATE"
+      );
       ctx.fillStyle = contributes ? "#facc15" : "#94a3b8";
-      ctx.fillText(part, partX, cy + 34);
-      partX += ctx.measureText(part).width + 14;
+      ctx.fillText(part, partX, cy + 28);
+      partX += ctx.measureText(part).width + 12;
     });
 
-    // Chinese badge + Slot tag
     ctx.textAlign = "right";
     ctx.fillStyle = isSelected ? "#38bdf8" : "#64748b";
-    ctx.font = "bold 15px monospace";
+    ctx.font = "bold 13px monospace";
     const slotLabel = !isSelected
       ? `[KEY ${idx + 1}]`
-      : (setup.difficulty === "NORMAL" ? `ACTIVE [${t.zh}]` : `SLOT ${pickOrder + 1}/3 [${t.zh}]`);
-    ctx.fillText(slotLabel, cx + cardW - 14, cy + 32);
+      : (setup.difficulty === "NORMAL" ? `ACTIVE [${t.zh}]` : `#${pickOrder + 1} [${t.zh}]`);
+    ctx.fillText(slotLabel, cx + cardW - 14, cy + 27);
 
-    // Description
     ctx.textAlign = "left";
     ctx.fillStyle = "#e2e8f0";
-    ctx.font = "13px monospace";
-    ctx.fillText(t.desc, cx + 16, cy + 66);
-
-    ctx.fillStyle = "#94a3b8";
     ctx.font = "12px monospace";
-    ctx.fillText(
-      setup.difficulty === "HARD"
-        ? `Slot 1 -> "${t.parts[0]}" | Slot 2 -> "${t.parts[1]}" | Slot 3 -> "${t.parts[2]}"`
-        : `Full Name -> "${t.parts.join("")}"`,
-      cx + 16,
-      cy + 94
-    );
+    ctx.fillText(t.desc, cx + 14, cy + 56);
 
     setup.uiBoxes.push({
       x: cx, y: cy, w: cardW, h: cardH,
@@ -1729,40 +1966,40 @@ function drawSelectScreen() {
     });
   });
 
-  // Generated Hunter Name Preview Box
+  // Hunter Name Preview
   const needed = requiredTraitCount();
   const ready = setup.selected.length === needed;
   const preview = buildHunterIdentity(setup.selected);
 
   ctx.fillStyle = "#0f172a";
-  ctx.fillRect(60, 424, W - 120, 68);
+  ctx.fillRect(52, 434, W - 104, 64);
   ctx.strokeStyle = ready ? "#22c55e" : "#64748b";
   ctx.lineWidth = 2;
-  ctx.strokeRect(60, 424, W - 120, 68);
+  ctx.strokeRect(52, 434, W - 104, 64);
 
   ctx.textAlign = "center";
   ctx.fillStyle = "#94a3b8";
-  ctx.font = "13px monospace";
+  ctx.font = "12px monospace";
   ctx.fillText(
     ready
-      ? "GENERATED TREASURE HUNTER CODE-NAME:"
-      : `PICK ${needed - setup.selected.length} MORE TRAIT(S) TO FORM HUNTER NAME:`,
+      ? "TREASURE HUNTER CODE-NAME:"
+      : `PICK ${needed - setup.selected.length} MORE TRAIT(S):`,
     W / 2,
-    446
+    454
   );
 
   ctx.fillStyle = ready ? "#facc15" : "#64748b";
-  ctx.font = "bold 24px monospace";
+  ctx.font = "bold 22px monospace";
   ctx.fillText(
     ready ? `${preview.codeName}   (${preview.splitName}  |  ${preview.zhTag})` : preview.splitName,
     W / 2,
-    478
+    484
   );
 
-  // Start Episode Button
-  const btnX = W / 2 - 170;
-  const btnY = 508;
-  const btnW = 340;
+  // Start Button
+  const btnX = W / 2 - 175;
+  const btnY = 514;
+  const btnW = 350;
   const btnH = 48;
   ctx.fillStyle = ready ? "#16a34a" : "#334155";
   ctx.fillRect(btnX, btnY, btnW, btnH);
@@ -1771,13 +2008,13 @@ function drawSelectScreen() {
   ctx.strokeRect(btnX, btnY, btnW, btnH);
 
   ctx.fillStyle = ready ? "#ffffff" : "#94a3b8";
-  ctx.font = "bold 18px monospace";
-  ctx.fillText(ready ? "START EPISODE 1 [ENTER]" : `SELECT ${needed} TRAIT(S)`, W / 2, btnY + 30);
+  ctx.font = "bold 17px monospace";
+  ctx.fillText(ready ? "START STAGE 1 [ENTER]" : `SELECT ${needed} TRAIT(S)`, W / 2, btnY + 30);
 
   if (ready) {
     setup.uiBoxes.push({
       x: btnX, y: btnY, w: btnW, h: btnH,
-      onClick: () => startEpisodeWithSelectedTraits()
+      onClick: () => startStageWithSelectedTraits()
     });
   }
 
@@ -1791,26 +2028,8 @@ let lastTime = performance.now();
 let accumulator = 0;
 
 function updateTick() {
-  if (game.state === "SELECT") {
-    for (const k in justPressed) delete justPressed[k];
-    return;
-  }
-
+  if (game.state === "SELECT") return;
   if (game.shakeTimer > 0) game.shakeTimer = Math.max(0, game.shakeTimer - DT);
-
-  if (game.state === "TRANSITION") {
-    const tr = game.transition;
-    tr.t += DT;
-    if (tr.t >= tr.duration) {
-      tr.active = false;
-      game.roomIdx = tr.toIdx;
-      hero.x = tr.nextHeroX;
-      hero.y = tr.nextHeroY;
-      game.state = "PLAY";
-    }
-    return;
-  }
-
   if (game.state !== "PLAY") return;
 
   game.elapsedTime += DT;
@@ -1820,15 +2039,12 @@ function updateTick() {
     return;
   }
 
-  const room = game.rooms[game.roomIdx];
   const input = getEffectiveInput();
-
-  stepHero(input, room);
-  stepProjectilesAndPickups(room);
-  stepEnemies(room);
+  stepHero(input, game.world);
+  stepProjectilesAndPickups(game.world);
+  stepEnemies(game.world);
   stepParticles();
-
-  for (const k in justPressed) delete justPressed[k];
+  updateCamera();
 }
 
 function renderFrame() {
@@ -1842,30 +2058,37 @@ function renderFrame() {
     ctx.translate((Math.random() - 0.5) * 8, (Math.random() - 0.5) * 8);
   }
 
-  if (game.state === "TRANSITION") {
-    const tr = game.transition;
-    const p = Math.min(1, tr.t / tr.duration);
-    const ease = 1 - Math.pow(1 - p, 3);
-    const slideX = ease * W * tr.dirX;
+  // Apply 4-way scrolling camera offset
+  ctx.save();
+  ctx.translate(-Math.round(game.camX), -Math.round(game.camY));
 
-    const fromRoom = game.rooms[tr.fromIdx];
-    const toRoom = game.rooms[tr.toIdx];
+  drawNotebookBackground();
+  drawWorldTerrain(game.world);
+  drawWorldEntities(game.world);
+  drawHero();
+  drawProjectilesAndAimMark();
 
-    drawKaaiBouSpread(fromRoom, -slideX);
-    drawRoomEntities(fromRoom, -slideX);
+  if (game.debug) {
+    ctx.strokeStyle = "rgba(37, 99, 235, 0.45)";
+    ctx.setLineDash([6, 6]);
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(hero.x + hero.w / 2, hero.y + hero.h * 0.42, HALF_W * 0.75, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
 
-    drawKaaiBouSpread(toRoom, W * tr.dirX - slideX);
-    drawRoomEntities(toRoom, W * tr.dirX - slideX);
-  } else {
-    const room = game.rooms[game.roomIdx];
-    drawKaaiBouSpread(room, 0);
-    drawRoomEntities(room, 0);
-    drawHero();
-    drawProjectilesAndParticles();
-    drawBlindSightMask();
+    ctx.strokeStyle = "#22c55e";
+    for (const s of game.world.solids) ctx.strokeRect(s.x, s.y, s.w, s.h);
+    ctx.strokeStyle = "#eab308";
+    for (const l of game.world.ladders) ctx.strokeRect(l.x, l.y, l.w, l.h);
+    ctx.strokeStyle = "#ef4444";
+    ctx.strokeRect(hero.x, hero.y, hero.w, hero.h);
   }
 
   ctx.restore();
+  drawBlindSightMask();
+  ctx.restore();
+
   drawHUD();
 }
 
