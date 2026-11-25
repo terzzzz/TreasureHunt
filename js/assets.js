@@ -1,6 +1,8 @@
+//js/assets.js //
+
 "use strict";
 
-function loadKeyedSprite(src, keyWhiteBg = true) {
+function loadKeyedSprite(src, keyWhiteBg = true, eraseOriginalGun = false) {
   const entry = { img: new Image(), canvas: null, loaded: false };
   entry.img.onload = () => {
     try {
@@ -27,6 +29,16 @@ function loadKeyedSprite(src, keyWhiteBg = true) {
         octx.putImageData(imgData, 0, 0);
       }
 
+      // Erase the static hand-drawn machine gun extending right from the torso
+      if (eraseOriginalGun) {
+        octx.clearRect(
+          Math.floor(w * 0.62),
+          Math.floor(h * 0.28),
+          Math.ceil(w * 0.38),
+          Math.ceil(h * 0.38)
+        );
+      }
+
       entry.canvas = off;
       entry.loaded = true;
     } catch (_) {
@@ -49,19 +61,19 @@ function loadOptionalImage(src) {
 }
 
 const CHAR_LAYERS = {
-  base:       loadKeyedSprite("./char/normal_char.jpg", true),
-  blind:      loadKeyedSprite("./char/blind.jpeg", true),
-  deaf:       loadKeyedSprite("./char/deaf.jpeg", true),
-  prosthesis: loadKeyedSprite("./char/prosthesis.jpeg", true),
-  tremor:     loadKeyedSprite("./char/tremor.jpeg", true),
-  asthma:     loadKeyedSprite("./char/asthma.jpeg", true)
+  base:       loadKeyedSprite("./char/normal_char.jpg", true, true),
+  blind:      loadKeyedSprite("./char/blind.jpeg", true, true),
+  deaf:       loadKeyedSprite("./char/deaf.jpeg", true, true),
+  prosthesis: loadKeyedSprite("./char/prosthesis.jpeg", true, true),
+  tremor:     loadKeyedSprite("./char/tremor.jpeg", true, true),
+  asthma:     loadKeyedSprite("./char/asthma.jpeg", true, true)
 };
 
 const TRAIT_BODY_ZONES = {
   blind:      [0.24, 0.04, 0.56, 0.25],
   deaf:       [0.14, 0.06, 0.48, 0.26],
   asthma:     [0.26, 0.26, 0.54, 0.26],
-  tremor:     [0.18, 0.34, 0.78, 0.34],
+  tremor:     [0.18, 0.34, 0.52, 0.34],
   prosthesis: [0.16, 0.62, 0.72, 0.38]
 };
 
@@ -152,12 +164,12 @@ const SFX = {
     if (this.muted || !this.ctx) return;
     const deafMult = hero.traits.deaf ? (hero.stats?.sfxGainMultiplier ?? 0.30) : 1.0;
     const notes = [
-      { f: 523.25, t: 0.00, d: 0.14 }, // C5
-      { f: 659.25, t: 0.14, d: 0.14 }, // E5
-      { f: 783.99, t: 0.28, d: 0.14 }, // G5
-      { f: 1046.5, t: 0.42, d: 0.32 }, // C6
-      { f: 783.99, t: 0.78, d: 0.16 }, // G5
-      { f: 1046.5, t: 0.96, d: 0.62 }  // C6 hold
+      { f: 523.25, t: 0.00, d: 0.14 },
+      { f: 659.25, t: 0.14, d: 0.14 },
+      { f: 783.99, t: 0.28, d: 0.14 },
+      { f: 1046.5, t: 0.42, d: 0.32 },
+      { f: 783.99, t: 0.78, d: 0.16 },
+      { f: 1046.5, t: 0.96, d: 0.62 }
     ];
     const now = this.ctx.currentTime;
     for (const n of notes) {
