@@ -194,7 +194,7 @@ const FALLBACK_TRAITS_DATA = {
       zhName: "阿振",
       anchor: "震",
       visual: "fragile_thin_arms",
-      desc: "Thin fragile arms + shaky aim with heavy rifle",
+      desc: "Thin fragile arms + shaky aim with rifle",
       stats: { aimJitterPx: 14, spreadRad: 0.32, headShakePx: 1.5 }
     },
     asthma: {
@@ -261,7 +261,7 @@ function buildHunterIdentity(traitIds) {
   }).join("·");
   return {
     code: key,
-    enName: `Picking (${traitIds.length}/3)`,
+    enName: `Picking (${traitIds.length}/${requiredTraitCount()})`,
     zhName: partialZh,
     anchors: partialZh
   };
@@ -353,8 +353,6 @@ async function initTraitsJson() {
 
 /* ============================================================================
  * 3. STACKABLE CHARACTER LAYERS + WHITE-BG KEYING (./char/*.jpg & *.jpeg)
- *    Expected files in ./char/:
- *      normal_char.jpg, blind.jpeg, deaf.jpeg, prosthesis.jpeg, tremor.jpeg, asthma.jpeg
  * ========================================================================== */
 function loadKeyedSprite(src, keyWhiteBg = true) {
   const entry = { img: new Image(), canvas: null, loaded: false };
@@ -426,7 +424,6 @@ const EXTRA_SPRITES = {
   treasure: loadOptionalImage("./char/treasure.png")
 };
 
-// Stage 1 Screen 001 matches your drawn notebook spread (Pages 26 & 27)
 const STAGE_001_DEFAULT = {
   stageId: "001",
   title: "Stage 1 — Ink Ruins",
@@ -435,10 +432,10 @@ const STAGE_001_DEFAULT = {
   screens: [
     {
       id: "001",
-      image: "bg/001.png",
+      image: "start.jpg",
       pageLeft: "26",
       pageRight: "27",
-      spawn: { x: 112, y: 496 },
+      spawn: { x: 112, y: 492 },
       exit: { x: 424, y: 364, w: 40, h: 24, hint: "CLIMB UP" },
       solids: [
         { x: 0,   y: 548, w: 984, h: 73, hatched: true },
@@ -463,10 +460,10 @@ const STAGE_001_DEFAULT = {
     },
     {
       id: "002",
-      image: "bg/002.png",
+      image: "001.jpg",
       pageLeft: "28",
       pageRight: "29",
-      spawn: { x: 64, y: 496 },
+      spawn: { x: 64, y: 492 },
       exit: { x: 944, y: 430, w: 32, h: 118, hint: "EXIT ->" },
       solids: [
         { x: 0,   y: 548, w: 984, h: 73, hatched: true },
@@ -491,11 +488,11 @@ const STAGE_001_DEFAULT = {
     },
     {
       id: "003",
-      image: "bg/003.png",
+      image: "exit.jpg",
       pageLeft: "30",
       pageRight: "31",
       isFinal: true,
-      spawn: { x: 64, y: 496 },
+      spawn: { x: 64, y: 492 },
       solids: [
         { x: 0,   y: 548, w: 984, h: 73, hatched: true },
         { x: 0,   y: 0,   w: 24,  h: 548 },
@@ -542,11 +539,13 @@ async function initStage001() {
   }
 
   stageManager.bgImages = {};
-  for (const scr of stageManager.data.screens) {
-    if (scr.image) {
-      stageManager.bgImages[scr.id] = loadOptionalImage(`${stageManager.stageFolder}/${scr.image}`);
+  stageManager.data.screens.forEach((scr, idx) => {
+    const key = scr.id || scr.file || String(idx);
+    const imgFile = scr.image || scr.file;
+    if (imgFile) {
+      stageManager.bgImages[key] = loadOptionalImage(`${stageManager.stageFolder}/${imgFile}`);
     }
-  }
+  });
 
   if (stageManager.data.bgm) {
     const audio = new Audio(`${stageManager.stageFolder}/${stageManager.data.bgm}`);
@@ -604,7 +603,7 @@ const SFX = {
 };
 
 /* ============================================================================
- * 5. INPUT MANAGER (ASDW + Mouse Aim Mark + Deaf Press/Release Delay)
+ * 5. INPUT MANAGER + ESC CHAR SELECT RESET + DEBUG BARRIER HELPERS
  * ========================================================================== */
 const keys = Object.create(null);
 const mouse = {
@@ -623,7 +622,70 @@ let prevEffectiveInput = {
   jumpHeld: false, gunHeld: false, boneHeld: false, hatHeld: false
 };
 
-const debugDrag = { active: false, startX: 0, startY: 0, curX: 0, curY: 0, lastJson: "" };
+const debugDrag = {
+  active: false,
+  startX: 0, startY: 0, curX: 0, curY: 0,
+  draftBox: null,
+  undoStack: [],
+  lastJson: ""
+};
+
+function commitDraftBarrier(kind) {
+  const scr = game.activeScreen;
+  const b = debugDrag.draftBox;
+  if (!scr || !b || b.w < 4 || b.h < 4) return;
+
+  if (kind === "solid") {
+    const item = { x: b.x, y: b.y, w: b.w, h: b.h, hatched: true };
+    scr.solids.push(item);
+    debugDrag.undoStack.push({ list: scr.solids, item });
+    debugDrag.lastJson = `[SOLID] ${JSON.stringify(item)}`;
+  } else if (kind === "ladder") {
+    const item = { x: b.x, y: b.y, w: b.w, h: b.h };
+    scr.ladders.push(item);
+    debugDrag.undoStack.push({ list: scr.ladders, item });
+    debugDrag.lastJson = `[LADDER] ${JSON.stringify(item)}`;
+  } else if (kind === "oneway") {
+    const item = { x: b.x, y: b.y, w: b.w, h: Math.max(8, b.h) };
+    scr.oneWay.push(item);
+    debugDrag.undoStack.push({ list: scr.oneWay, item });
+    debugDrag.lastJson = `[ONEWAY] ${JSON.stringify(item)}`;
+  }
+  console.log("Added barrier:", debugDrag.lastJson);
+  SFX.beep(520, 0.08, "triangle", 0.07, 740);
+}
+
+function undoLastBarrier() {
+  const entry = debugDrag.undoStack.pop();
+  if (!entry) return;
+  const idx = entry.list.indexOf(entry.item);
+  if (idx !== -1) entry.list.splice(idx, 1);
+  debugDrag.lastJson = "UNDONE last barrier";
+  SFX.beep(300, 0.08, "triangle", 0.06, 180);
+}
+
+function returnToCharSelect() {
+  game.state = "SELECT";
+  game.screenIdx = 0;
+  game.score = 0;
+  game.stageTimer = stageManager.data.timeLimit || 600;
+  game.elapsedTime = 0;
+  game.shakeTimer = 0;
+  game.fadeTimer = 0;
+
+  game.bullets.length = 0;
+  game.bones.length = 0;
+  game.missiles.length = 0;
+  game.particles.length = 0;
+  inputDelayBuffer.length = 0;
+
+  mouse.leftDown = false;
+  mouse.rightDown = false;
+  mouse.middleDown = false;
+  for (const k in keys) keys[k] = false;
+
+  SFX.syncBgm();
+}
 
 window.addEventListener("contextmenu", e => e.preventDefault());
 
@@ -680,8 +742,8 @@ window.addEventListener("mouseup", e => {
     const w = Math.abs(debugDrag.curX - debugDrag.startX);
     const h = Math.abs(debugDrag.curY - debugDrag.startY);
     if (w > 4 && h > 4) {
-      debugDrag.lastJson = `{ "x": ${x}, "y": ${y}, "w": ${w}, "h": ${h} }`;
-      console.log("Stage JSON Box:", debugDrag.lastJson);
+      debugDrag.draftBox = { x, y, w, h };
+      debugDrag.lastJson = `DRAFT { "x": ${x}, "y": ${y}, "w": ${w}, "h": ${h} } -> [B]Solid [L]Ladder [O]OneWay`;
     }
     return;
   }
@@ -710,11 +772,21 @@ window.addEventListener("keydown", e => {
     return;
   }
 
-  if (e.code === "Tab") {
+  // Pressing Esc (or Tab) anytime during gameplay returns to Character Select & restarts
+  if (e.code === "Escape" || e.code === "Tab") {
     e.preventDefault();
-    game.state = "SELECT";
-    SFX.syncBgm();
-  } else if (e.code === "F2") {
+    returnToCharSelect();
+    return;
+  }
+
+  if (game.debug && game.state === "PLAY") {
+    if (e.code === "KeyB") commitDraftBarrier("solid");
+    else if (e.code === "KeyL") commitDraftBarrier("ladder");
+    else if (e.code === "KeyO") commitDraftBarrier("oneway");
+    else if (e.code === "KeyZ") undoLastBarrier();
+  }
+
+  if (e.code === "F2") {
     e.preventDefault();
     game.debug = !game.debug;
   } else if (e.code === "KeyM") {
@@ -887,7 +959,7 @@ function getEffectiveInput() {
 }
 
 /* ============================================================================
- * 6. GAME STATE & ONE-WAY SCREEN LOADING (001 -> 002 -> FINAL)
+ * 6. GAME STATE & SCREEN LOADING
  * ========================================================================== */
 const game = {
   state: "SELECT", // SELECT | PLAY | SCREEN_FADE | GAMEOVER | VICTORY
@@ -928,17 +1000,24 @@ const hero = {
 function loadScreenByIndex(idx) {
   const screens = stageManager.data.screens;
   const tpl = screens[idx];
+  const scrKey = tpl.id || tpl.file || String(idx);
   game.screenIdx = idx;
+  debugDrag.draftBox = null;
+  debugDrag.undoStack.length = 0;
 
   game.activeScreen = {
-    id: tpl.id,
-    image: tpl.image || null,
+    id: scrKey,
+    image: tpl.image || tpl.file || null,
     pageLeft: tpl.pageLeft || String(26 + idx * 2),
     pageRight: tpl.pageRight || String(27 + idx * 2),
     isFinal: Boolean(tpl.isFinal || idx === screens.length - 1),
-    spawn: { ...(tpl.spawn || { x: 64, y: 492 }) },
+    spawn: { ...(tpl.spawn || { x: 80, y: 492 }) },
     exit: tpl.exit ? { ...tpl.exit } : null,
-    solids: (tpl.solids || []).map(s => ({ ...s })),
+    solids: (tpl.solids || [
+      { x: 0, y: 548, w: 984, h: 73, hatched: true },
+      { x: 0, y: 0, w: 24, h: 548 },
+      { x: 960, y: 0, w: 24, h: 548 }
+    ]).map(s => ({ ...s })),
     oneWay: (tpl.oneWay || []).map(p => ({ ...p })),
     ladders: (tpl.ladders || []).map(l => ({ ...l })),
     pickups: (tpl.pickups || []).map(p => ({ w: 28, h: 24, ...p, collected: false })),
@@ -963,7 +1042,7 @@ function loadScreenByIndex(idx) {
     })
   };
 
-  const bgImg = stageManager.bgImages[tpl.id];
+  const bgImg = stageManager.bgImages[scrKey];
   game.worldW = (bgImg && bgImg.loaded && bgImg.naturalWidth > W) ? bgImg.naturalWidth : (tpl.width || W);
   game.worldH = (bgImg && bgImg.loaded && bgImg.naturalHeight > H) ? bgImg.naturalHeight : (tpl.height || H);
 
@@ -1504,7 +1583,7 @@ function stepParticles() {
 }
 
 /* ============================================================================
- * 8. RENDERING: SCREEN 001, STACKABLE MOVABLE CHARACTER & SELECT SCREEN
+ * 8. RENDERING: SCREEN, CHARACTER & SELECT SCREEN WITH LARGE PREVIEW
  * ========================================================================== */
 function drawActiveScreenBackground(scr) {
   const customBg = stageManager.bgImages[scr.id];
@@ -1815,55 +1894,43 @@ function drawSpriteLayer(layer, dx, dy, dw, dh) {
   return true;
 }
 
-function drawHero() {
-  if (hero.invulnTimer > 0 && Math.floor(hero.invulnTimer * 20) % 2 === 0) return;
-
-  const time = game.elapsedTime;
-  const shakeAmp = hero.traits.tremor ? (hero.stats?.headShakePx ?? 1.5) : 0;
-  const tremorX = shakeAmp > 0 ? Math.sin(time * 55) * shakeAmp : 0;
-  const pantY   = hero.asthmaStun > 0 ? Math.sin(time * 16) * 2.5 : 0;
-
-  const runBobY = hero.animState === "RUN" ? Math.abs(Math.sin(hero.animTimer)) * -3.5 : 0;
-  const runTilt = hero.animState === "RUN" ? Math.sin(hero.animTimer) * 0.045 + hero.facing * 0.04 : 0;
-  const climbBobX = hero.animState === "CLIMB" ? Math.sin(hero.animTimer) * 2.5 : 0;
-  const jumpSquashY = hero.animState === "JUMP" ? -2.5 : 0;
-
-  const footX = hero.x + hero.w / 2 + tremorX + climbBobX;
-  const footY = hero.y + hero.h + pantY + runBobY + jumpSquashY;
-
+// Reusable renderer for both in-game hero and enlarged Select Screen preview
+function drawLayeredCharacter(footX, footY, scaleFactor, activeTraits, timeSec, opts = {}) {
   const spriteW = 54;
   const spriteH = 66;
+  const facing = opts.facing ?? 1;
+  const runTilt = opts.runTilt ?? 0;
+  const animState = opts.animState ?? "IDLE";
+  const animTimer = opts.animTimer ?? 0;
 
   ctx.save();
   ctx.translate(footX, footY);
-  ctx.scale(hero.facing, 1);
+  ctx.scale(facing * scaleFactor, scaleFactor);
   ctx.rotate(runTilt);
 
   const hasBaseSprite = CHAR_LAYERS.base.loaded;
   if (hasBaseSprite) {
-    // 1. Base standard adventurer (normal_char.jpg)
     drawSpriteLayer(CHAR_LAYERS.base, -spriteW / 2, -spriteH, spriteW, spriteH);
 
-    // 2. Stack independent trait layers in deterministic order
-    if (hero.traits.prosthesis && CHAR_LAYERS.prosthesis.loaded) {
+    if (activeTraits.prosthesis && CHAR_LAYERS.prosthesis.loaded) {
       drawSpriteLayer(CHAR_LAYERS.prosthesis, -spriteW / 2, -spriteH, spriteW, spriteH);
     }
-    if (hero.traits.blind && CHAR_LAYERS.blind.loaded) {
+    if (activeTraits.blind && CHAR_LAYERS.blind.loaded) {
       drawSpriteLayer(CHAR_LAYERS.blind, -spriteW / 2, -spriteH, spriteW, spriteH);
     }
-    if (hero.traits.deaf && CHAR_LAYERS.deaf.loaded) {
+    if (activeTraits.deaf && CHAR_LAYERS.deaf.loaded) {
       drawSpriteLayer(CHAR_LAYERS.deaf, -spriteW / 2, -spriteH, spriteW, spriteH);
     }
-    if (hero.traits.asthma && CHAR_LAYERS.asthma.loaded) {
+    if (activeTraits.asthma && CHAR_LAYERS.asthma.loaded) {
       drawSpriteLayer(CHAR_LAYERS.asthma, -spriteW / 2, -spriteH, spriteW, spriteH);
     }
-    if (hero.traits.tremor && CHAR_LAYERS.tremor.loaded) {
+    if (activeTraits.tremor && CHAR_LAYERS.tremor.loaded) {
       drawSpriteLayer(CHAR_LAYERS.tremor, -spriteW / 2, -spriteH, spriteW, spriteH);
     }
   } else {
-    const swing = hero.animState === "RUN" ? Math.sin(hero.animTimer) * 6 : 0;
-    ctx.strokeStyle = hero.traits.prosthesis ? "#94a3b8" : "#1e293b";
-    ctx.lineWidth = hero.traits.tremor ? 1.5 : 2.6;
+    const swing = animState === "RUN" ? Math.sin(animTimer) * 6 : 0;
+    ctx.strokeStyle = activeTraits.prosthesis ? "#94a3b8" : "#1e293b";
+    ctx.lineWidth = activeTraits.tremor ? 1.5 : 2.6;
     ctx.beginPath();
     ctx.moveTo(0, -24);
     ctx.lineTo(-7 + swing, 0);
@@ -1883,11 +1950,11 @@ function drawHero() {
     ctx.fill();
     ctx.stroke();
 
-    if (hero.traits.blind) {
+    if (activeTraits.blind) {
       ctx.fillStyle = "#0f172a";
       ctx.fillRect(-1, -50, 8, 4);
     }
-    if (hero.traits.deaf) {
+    if (activeTraits.deaf) {
       ctx.fillStyle = "#38bdf8";
       ctx.beginPath();
       ctx.arc(-5, -47, 3, 0, Math.PI * 2);
@@ -1895,9 +1962,8 @@ function drawHero() {
     }
   }
 
-  // Tremor: fragile thin-arm strain lines & slight gun-arm quiver (no anger marks)
-  if (hero.traits.tremor) {
-    const quiver = Math.sin(time * 48) * 1.4;
+  if (activeTraits.tremor) {
+    const quiver = Math.sin(timeSec * 48) * 1.4;
     ctx.strokeStyle = "rgba(100, 116, 139, 0.85)";
     ctx.lineWidth = 1.2;
     ctx.beginPath();
@@ -1908,8 +1974,8 @@ function drawHero() {
     ctx.stroke();
   }
 
-  if (hero.traits.asthma && (hero.asthma > 35 || hero.asthmaStun > 0)) {
-    const puffPhase = (time * (hero.asthmaStun > 0 ? 4 : 1.8)) % 1;
+  if (activeTraits.asthma && (opts.showPuff || hero.asthma > 35 || hero.asthmaStun > 0)) {
+    const puffPhase = (timeSec * (hero.asthmaStun > 0 ? 4 : 1.8)) % 1;
     ctx.fillStyle = `rgba(255, 255, 255, ${(1 - puffPhase) * 0.85})`;
     ctx.strokeStyle = `rgba(100, 116, 139, ${(1 - puffPhase) * 0.65})`;
     ctx.lineWidth = 1;
@@ -1919,7 +1985,7 @@ function drawHero() {
     ctx.stroke();
   }
 
-  if (hero.hasMissileHat) {
+  if (opts.hasMissileHat) {
     const ready = hero.hatCooldown <= 0;
     ctx.fillStyle = ready ? "#facc15" : "#854d0e";
     ctx.fillRect(-10, -56, 20, 4);
@@ -1927,8 +1993,34 @@ function drawHero() {
   }
 
   ctx.restore();
+}
+
+function drawHero() {
+  if (hero.invulnTimer > 0 && Math.floor(hero.invulnTimer * 20) % 2 === 0) return;
+
+  const time = game.elapsedTime;
+  const shakeAmp = hero.traits.tremor ? (hero.stats?.headShakePx ?? 1.5) : 0;
+  const tremorX = shakeAmp > 0 ? Math.sin(time * 55) * shakeAmp : 0;
+  const pantY   = hero.asthmaStun > 0 ? Math.sin(time * 16) * 2.5 : 0;
+
+  const runBobY = hero.animState === "RUN" ? Math.abs(Math.sin(hero.animTimer)) * -3.5 : 0;
+  const runTilt = hero.animState === "RUN" ? Math.sin(hero.animTimer) * 0.045 + hero.facing * 0.04 : 0;
+  const climbBobX = hero.animState === "CLIMB" ? Math.sin(hero.animTimer) * 2.5 : 0;
+  const jumpSquashY = hero.animState === "JUMP" ? -2.5 : 0;
+
+  const footX = hero.x + hero.w / 2 + tremorX + climbBobX;
+  const footY = hero.y + hero.h + pantY + runBobY + jumpSquashY;
+
+  drawLayeredCharacter(footX, footY, 1.0, hero.traits, time, {
+    facing: hero.facing,
+    runTilt,
+    animState: hero.animState,
+    animTimer: hero.animTimer,
+    hasMissileHat: hero.hasMissileHat
+  });
 
   if (hero.traits.asthma && (hero.asthma > 2 || hero.asthmaStun > 0)) {
+    const spriteH = 66;
     const barW = 36;
     const barX = footX - barW / 2;
     const barY = footY - spriteH - 10;
@@ -2077,7 +2169,7 @@ function drawHUD() {
   ctx.fillText(`${game.score.toString().padStart(6, "0")}`, 654, 17);
 
   ctx.fillStyle = "#cbd5e1";
-  ctx.fillText(`[TAB]CHAR [M]BGM [F2]DBG`, 725, 17);
+  ctx.fillText(`[ESC]CHAR [M]BGM [F2]DBG`, 725, 17);
 
   if (game.debug && game.activeScreen) {
     const scr = game.activeScreen;
@@ -2096,6 +2188,8 @@ function drawHUD() {
     for (const s of scr.solids) ctx.strokeRect(s.x, s.y, s.w, s.h);
     ctx.strokeStyle = "#eab308";
     for (const l of scr.ladders) ctx.strokeRect(l.x, l.y, l.w, l.h);
+    ctx.strokeStyle = "#f97316";
+    for (const p of scr.oneWay) ctx.strokeRect(p.x, p.y, p.w, p.h);
     ctx.strokeStyle = "#10b981";
     if (scr.exit) ctx.strokeRect(scr.exit.x, scr.exit.y, scr.exit.w, scr.exit.h);
     ctx.strokeStyle = "#ef4444";
@@ -2109,16 +2203,22 @@ function drawHUD() {
       ctx.strokeStyle = "#c026d3";
       ctx.lineWidth = 2;
       ctx.strokeRect(rx, ry, rw, rh);
+    } else if (debugDrag.draftBox) {
+      const db = debugDrag.draftBox;
+      ctx.strokeStyle = "#e879f9";
+      ctx.setLineDash([5, 3]);
+      ctx.lineWidth = 2;
+      ctx.strokeRect(db.x, db.y, db.w, db.h);
+      ctx.setLineDash([]);
     }
     ctx.restore();
 
-    if (debugDrag.lastJson) {
-      ctx.fillStyle = "rgba(15, 23, 42, 0.9)";
-      ctx.fillRect(10, H - 34, 480, 26);
-      ctx.fillStyle = "#4ade80";
-      ctx.font = "13px monospace";
-      ctx.fillText(`DRAG BOX: ${debugDrag.lastJson}`, 18, H - 16);
-    }
+    ctx.fillStyle = "rgba(15, 23, 42, 0.92)";
+    ctx.fillRect(10, H - 34, W - 20, 26);
+    ctx.fillStyle = "#4ade80";
+    ctx.font = "12px monospace";
+    const statusText = debugDrag.lastJson || "DRAG BOX -> [B]Solid [L]Ladder [O]OneWay [Z]Undo";
+    ctx.fillText(statusText, 18, H - 16);
   }
 
   if (game.state === "GAMEOVER" || game.state === "VICTORY") {
@@ -2133,7 +2233,7 @@ function drawHUD() {
     ctx.fillText(`${hero.identity.zhName} — ${hero.identity.enName} (${hero.identity.anchors}) [${setup.difficulty}]`, W / 2, H / 2 + 4);
     ctx.fillStyle = "#f8fafc";
     ctx.font = "17px monospace";
-    ctx.fillText(`FINAL SCORE: ${game.score}  |  [R] RETRY  |  [TAB] CHANGE HUNTER`, W / 2, H / 2 + 46);
+    ctx.fillText(`FINAL SCORE: ${game.score}  |  [R] RETRY  |  [ESC] CHANGE HUNTER`, W / 2, H / 2 + 46);
     ctx.textAlign = "left";
   }
 }
@@ -2142,25 +2242,25 @@ function drawSelectScreen() {
   setup.uiBoxes.length = 0;
   drawActiveScreenBackground(STAGE_001_DEFAULT.screens[0]);
 
-  ctx.fillStyle = "rgba(15, 23, 42, 0.88)";
-  ctx.fillRect(32, 20, W - 64, H - 40);
+  ctx.fillStyle = "rgba(15, 23, 42, 0.90)";
+  ctx.fillRect(28, 16, W - 56, H - 32);
   ctx.strokeStyle = "#facc15";
   ctx.lineWidth = 2;
-  ctx.strokeRect(32, 20, W - 64, H - 40);
+  ctx.strokeRect(28, 16, W - 56, H - 32);
 
   ctx.textAlign = "center";
   ctx.fillStyle = "#facc15";
-  ctx.font = "bold 25px monospace";
-  ctx.fillText("UNBOUND RELICS  無界尋寶錄", W / 2, 54);
+  ctx.font = "bold 24px monospace";
+  ctx.fillText("UNBOUND RELICS  無界尋寶錄", W / 2, 48);
 
   ctx.fillStyle = "#cbd5e1";
-  ctx.font = "13px monospace";
-  ctx.fillText("ASDW MOVE/JUMP/LADDER  |  MOUSE AIM + L-CLICK GUN  |  R-CLICK BONE  |  F HAT MISSILE", W / 2, 76);
+  ctx.font = "12px monospace";
+  ctx.fillText("ASDW MOVE/JUMP/LADDER  |  MOUSE AIM + L-CLICK GUN  |  R-CLICK BONE  |  F HAT MISSILE  |  ESC CHAR SELECT", W / 2, 68);
 
   const diffBtns = [
-    { id: "NORMAL",   label: "NORMAL (1) [N]",   x: W / 2 - 345, y: 92, w: 216, h: 36 },
-    { id: "HARD",     label: "HARD (3) [H]",     x: W / 2 - 108, y: 92, w: 216, h: 36 },
-    { id: "ULTIMATE", label: "ULTIMATE (5) [U]", x: W / 2 + 129, y: 92, w: 216, h: 36 }
+    { id: "NORMAL",   label: "NORMAL (1) [N]",   x: W / 2 - 345, y: 82, w: 216, h: 34 },
+    { id: "HARD",     label: "HARD (3) [H]",     x: W / 2 - 108, y: 82, w: 216, h: 34 },
+    { id: "ULTIMATE", label: "ULTIMATE (5) [U]", x: W / 2 + 129, y: 82, w: 216, h: 34 }
   ];
 
   for (const b of diffBtns) {
@@ -2173,7 +2273,7 @@ function drawSelectScreen() {
 
     ctx.fillStyle = active ? (b.id === "ULTIMATE" ? "#ffffff" : "#0f172a") : "#f8fafc";
     ctx.font = "bold 14px monospace";
-    ctx.fillText(b.label, b.x + b.w / 2, b.y + 23);
+    ctx.fillText(b.label, b.x + b.w / 2, b.y + 22);
 
     setup.uiBoxes.push({
       x: b.x, y: b.y, w: b.w, h: b.h,
@@ -2181,24 +2281,21 @@ function drawSelectScreen() {
     });
   }
 
-  const cardW = 428;
-  const cardH = 82;
-  const startX = 52;
-  const startY = 142;
-  const gapX = 24;
-  const gapY = 12;
+  // Left side: 5 Trait Cards stacked vertically
+  const cardW = 630;
+  const cardH = 62;
+  const startX = 46;
+  const startY = 130;
+  const gapY = 9;
 
   TRAIT_ORDER.forEach((traitId, idx) => {
     const t = traitsConfig.traits[traitId];
     if (!t) return;
-    const col = idx % 2;
-    const row = Math.floor(idx / 2);
-    const cx = idx === 4 ? W / 2 - cardW / 2 : startX + col * (cardW + gapX);
-    const cy = startY + row * (cardH + gapY);
-
+    const cx = startX;
+    const cy = startY + idx * (cardH + gapY);
     const isSelected = setup.selected.includes(traitId);
 
-    ctx.fillStyle = isSelected ? "rgba(30, 58, 138, 0.92)" : "rgba(30, 41, 59, 0.9)";
+    ctx.fillStyle = isSelected ? "rgba(30, 58, 138, 0.94)" : "rgba(30, 41, 59, 0.9)";
     ctx.fillRect(cx, cy, cardW, cardH);
     ctx.strokeStyle = isSelected ? "#facc15" : "#475569";
     ctx.lineWidth = isSelected ? 2.5 : 1.5;
@@ -2206,18 +2303,18 @@ function drawSelectScreen() {
 
     ctx.textAlign = "left";
     ctx.fillStyle = isSelected ? "#facc15" : "#f8fafc";
-    ctx.font = "bold 18px sans-serif";
-    ctx.fillText(`${t.num}. ${t.en}  ${t.zhName} (${t.anchor})`, cx + 14, cy + 30);
+    ctx.font = "bold 17px sans-serif";
+    ctx.fillText(`${t.num}. ${t.en}  ${t.zhName} (${t.anchor})`, cx + 14, cy + 25);
 
     ctx.textAlign = "right";
     ctx.fillStyle = isSelected ? "#38bdf8" : "#64748b";
     ctx.font = "bold 13px monospace";
-    ctx.fillText(isSelected ? "SELECTED" : `[KEY ${t.num}]`, cx + cardW - 14, cy + 28);
+    ctx.fillText(isSelected ? "SELECTED" : `[KEY ${t.num}]`, cx + cardW - 14, cy + 24);
 
     ctx.textAlign = "left";
     ctx.fillStyle = "#e2e8f0";
     ctx.font = "12px monospace";
-    ctx.fillText(t.desc || "", cx + 14, cy + 58);
+    ctx.fillText(t.desc || "", cx + 14, cy + 48);
 
     setup.uiBoxes.push({
       x: cx, y: cy, w: cardW, h: cardH,
@@ -2225,48 +2322,89 @@ function drawSelectScreen() {
     });
   });
 
+  // Right side: Large Character Preview Panel
+  const prevX = 694;
+  const prevY = 130;
+  const prevW = 244;
+  const prevH = 346;
+
+  ctx.fillStyle = "#f5f1e6";
+  ctx.fillRect(prevX, prevY, prevW, prevH);
+  ctx.strokeStyle = "#facc15";
+  ctx.lineWidth = 2.5;
+  ctx.strokeRect(prevX, prevY, prevW, prevH);
+
+  // Notebook ruled lines inside preview card for authentic look
+  ctx.strokeStyle = "rgba(130, 145, 165, 0.35)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let ly = prevY + 36; ly < prevY + 260; ly += 22) {
+    ctx.moveTo(prevX + 12, ly);
+    ctx.lineTo(prevX + prevW - 12, ly);
+  }
+  ctx.stroke();
+
+  // Floor line inside preview box
+  const previewFloorY = prevY + 252;
+  ctx.fillStyle = "#1e293b";
+  ctx.fillRect(prevX + 16, previewFloorY, prevW - 32, 6);
+
+  // Header badge
+  ctx.fillStyle = "#0f172a";
+  ctx.fillRect(prevX, prevY, prevW, 26);
+  ctx.fillStyle = "#facc15";
+  ctx.font = "bold 12px monospace";
+  ctx.textAlign = "center";
+  ctx.fillText("HUNTER PREVIEW (2.8x)", prevX + prevW / 2, prevY + 17);
+
+  // Render enlarged 2.8x layered character with idle breathing & trait animations
+  const nowSec = performance.now() / 1000;
+  const previewStats = computeHunterStats(setup.selected);
+  const previewShake = previewStats.active.tremor ? Math.sin(nowSec * 55) * 2.5 : 0;
+  const previewBob = Math.sin(nowSec * 3.2) * 1.5;
+
+  drawLayeredCharacter(
+    prevX + prevW / 2 + previewShake,
+    previewFloorY + previewBob,
+    2.8,
+    previewStats.active,
+    nowSec,
+    { facing: 1, showPuff: previewStats.active.asthma }
+  );
+
+  // Name & stats footer inside preview card
   const needed = requiredTraitCount();
   const ready = setup.selected.length === needed;
   const preview = buildHunterIdentity(setup.selected);
 
   ctx.fillStyle = "#0f172a";
-  ctx.fillRect(52, 434, W - 104, 64);
-  ctx.strokeStyle = ready ? "#22c55e" : "#64748b";
-  ctx.lineWidth = 2;
-  ctx.strokeRect(52, 434, W - 104, 64);
+  ctx.fillRect(prevX + 8, prevY + 266, prevW - 16, 72);
+  ctx.fillStyle = ready ? "#facc15" : "#94a3b8";
+  ctx.font = "bold 18px sans-serif";
+  ctx.fillText(ready ? `${preview.zhName} (${preview.anchors})` : preview.zhName, prevX + prevW / 2, prevY + 291);
 
-  ctx.textAlign = "center";
-  ctx.fillStyle = "#94a3b8";
-  ctx.font = "12px monospace";
-  ctx.fillText(
-    ready
-      ? `TREASURE HUNTER PROFILE [${preview.code}]:`
-      : `PICK ${needed - setup.selected.length} MORE TRAIT(S):`,
-    W / 2,
-    454
-  );
+  ctx.fillStyle = ready ? "#38bdf8" : "#64748b";
+  ctx.font = "bold 13px monospace";
+  ctx.fillText(ready ? `${preview.enName} [${preview.code}]` : `PICK ${needed - setup.selected.length} MORE`, prevX + prevW / 2, prevY + 312);
 
-  ctx.fillStyle = ready ? "#facc15" : "#64748b";
-  ctx.font = "bold 23px sans-serif";
-  ctx.fillText(
-    ready ? `${preview.enName}   ${preview.zhName}  (${preview.anchors})` : preview.zhName,
-    W / 2,
-    484
-  );
+  ctx.fillStyle = "#cbd5e1";
+  ctx.font = "11px monospace";
+  ctx.fillText(`SPD:${Math.round(previewStats.walkSpeed)}  HP:${previewStats.maxHp}`, prevX + prevW / 2, prevY + 330);
 
-  const btnX = W / 2 - 175;
-  const btnY = 514;
-  const btnW = 350;
-  const btnH = 48;
+  // Bottom Start Button
+  const btnX = W / 2 - 210;
+  const btnY = 496;
+  const btnW = 420;
+  const btnH = 52;
   ctx.fillStyle = ready ? "#16a34a" : "#334155";
   ctx.fillRect(btnX, btnY, btnW, btnH);
   ctx.strokeStyle = ready ? "#86efac" : "#475569";
-  ctx.lineWidth = 2;
+  ctx.lineWidth = 2.5;
   ctx.strokeRect(btnX, btnY, btnW, btnH);
 
   ctx.fillStyle = ready ? "#ffffff" : "#94a3b8";
-  ctx.font = "bold 17px monospace";
-  ctx.fillText(ready ? "START STAGE 001 [ENTER]" : `SELECT ${needed} TRAIT(S)`, W / 2, btnY + 30);
+  ctx.font = "bold 18px monospace";
+  ctx.fillText(ready ? "START STAGE 001 [ENTER]" : `SELECT ${needed} TRAIT(S) TO START`, W / 2, btnY + 32);
 
   if (ready) {
     setup.uiBoxes.push({
