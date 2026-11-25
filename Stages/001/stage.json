@@ -1,0 +1,33 @@
+{
+  "stageId": "001",
+  "title": "Stage 1 — Ink Ruins",
+  "timeLimit": 600,
+  "bgm": "music/bgm.mp3",
+  "screens": [
+    {
+      "id": "001",
+      "image": "bg/001.png",
+      "crop": { "x": 60, "y": 120, "w": 1200, "h": 750 },
+      "pageLeft": "26",
+      "pageRight": "27",
+      "spawn": { "x": 112, "y": 492 },
+      "exit": { "x": 424, "y": 364, "w": 40, "h": 24, "hint": "CLIMB UP" },
+      "solids": [
+        { "x": 0, "y": 548, "w": 984, "h": 73, "hatched": true },
+        { "x": 0, "y": 0, "w": 24, "h": 548 },
+        { "x": 960, "y": 0, "w": 24, "h": 548 }
+      ],
+      "oneWay": [],
+      "ladders": [
+        { "x": 424, "y": 382, "w": 40, "h": 166 }
+      ],
+      "pickups": [
+        { "type": "crown", "x": 215, "y": 455, "w": 26, "h": 20 },
+        { "type": "chicken", "x": 845, "y": 516, "w": 34, "h": 28 }
+      ],
+      "enemies": [
+        { "kind": "blade", "x": 310, "y": 496, "minX": 185, "maxX": 405, "hp": 40 }
+      ]
+    }
+  ]
+}
