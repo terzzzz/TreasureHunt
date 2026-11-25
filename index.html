@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <title>The Blind Treasure</title>
+  <title>Unbound Relics — 無界尋寶錄</title>
   <style>
     * {
       box-sizing: border-box;
@@ -42,8 +42,8 @@
       aspect-ratio: 328 / 207;
       box-shadow: 0 14px 40px rgba(0, 0, 0, 0.65);
       background: #f5eedc;
+      cursor: pointer;
     }
-    /* Responsive Touch Controls (Auto-shown on touch, hidden on keyboard) */
     #touch-ui {
       position: fixed;
       inset: 0;
@@ -139,14 +139,101 @@ const ctx = canvas.getContext("2d");
 const SCALE = 3;
 const W = 328 * SCALE;        // 984 px
 const H = 207 * SCALE;        // 621 px
-const HALF_W = W / 2;         // 492 px (1 page width = Machine Gun max range!)
+const HALF_W = W / 2;         // 492 px (Machine Gun max range = half screen)
 const FPS = 60;
 const DT = 1 / FPS;
 
+// Offscreen canvas for the "Blind" circular sight mask
+const sightCanvas = document.createElement("canvas");
+sightCanvas.width = W;
+sightCanvas.height = H;
+const sightCtx = sightCanvas.getContext("2d");
+
 /* ============================================================================
- * 2. OPTIONAL PNG ASSET LOADER (Relative paths for GitHub Pages & iOS)
- *    Drop PNGs into ./assets/ later; procedural ink art renders automatically
- *    whenever an image file is not yet present.
+ * 2. TRAIT DEFINITIONS & 3-PART HUNTER NAME SYSTEM
+ * ========================================================================== */
+const TRAIT_DEFS = {
+  blind: {
+    id: "blind",
+    parts: ["BL", "IN", "D"],
+    zh: "盲",
+    label: "BL - IN - D",
+    desc: "Circle of watchable sight (145px radius)"
+  },
+  deaf: {
+    id: "deaf",
+    parts: ["D", "EA", "F"],
+    zh: "聾",
+    label: "D - EA - F",
+    desc: "0.40s delay on all key/button responses"
+  },
+  wheeled: {
+    id: "wheeled",
+    parts: ["WH", "EE", "LED"],
+    zh: "輪",
+    label: "WH - EE - LED",
+    desc: "1.38x ground speed; slow 2-hand climb, no shooting on ladder"
+  },
+  prosthesis: {
+    id: "prosthesis",
+    parts: ["PROS", "THE", "SIS"],
+    zh: "義",
+    label: "PROS - THE - SIS",
+    desc: "0.62x ground movement speed & slightly lower jump"
+  }
+};
+
+const TRAIT_ORDER = ["blind", "deaf", "wheeled", "prosthesis"];
+
+const setup = {
+  difficulty: "NORMAL", // "NORMAL" (1 trait) | "HARD" (3 traits)
+  selected: ["blind"],  // Ordered array of trait IDs
+  uiBoxes: []           // Clickable hit areas on selection screen
+};
+
+function requiredTraitCount() {
+  return setup.difficulty === "HARD" ? 3 : 1;
+}
+
+function buildHunterIdentity(traitIds) {
+  if (!traitIds || traitIds.length === 0) {
+    return { codeName: "UNKNOWN", splitName: "---", zhTag: "" };
+  }
+  if (traitIds.length === 1) {
+    const t = TRAIT_DEFS[traitIds[0]];
+    return {
+      codeName: t.parts.join(""),
+      splitName: t.parts.join("·"),
+      zhTag: t.zh
+    };
+  }
+  // 3 traits: Part 1 of 1st + Part 2 of 2nd + Part 3 of 3rd
+  const p1 = TRAIT_DEFS[traitIds[0]].parts[0];
+  const p2 = TRAIT_DEFS[traitIds[1]].parts[1];
+  const p3 = TRAIT_DEFS[traitIds[2]].parts[2];
+  const zhTag = traitIds.map(id => TRAIT_DEFS[id].zh).join("·");
+  return {
+    codeName: p1 + p2 + p3,
+    splitName: `${p1}·${p2}·${p3}`,
+    zhTag
+  };
+}
+
+function toggleTraitSelection(traitId) {
+  const maxPicks = requiredTraitCount();
+  const idx = setup.selected.indexOf(traitId);
+  if (idx !== -1) {
+    setup.selected.splice(idx, 1);
+  } else {
+    if (setup.selected.length >= maxPicks) {
+      setup.selected.shift();
+    }
+    setup.selected.push(traitId);
+  }
+}
+
+/* ============================================================================
+ * 3. OPTIONAL PNG ASSET LOADER (Relative paths for GitHub Pages & iOS)
  * ========================================================================== */
 const ASSET_PATHS = {
   bgRoom0: "./assets/bg_room0.png",
@@ -173,7 +260,7 @@ for (const [key, src] of Object.entries(ASSET_PATHS)) {
 }
 
 /* ============================================================================
- * 3. RETRO WEB AUDIO SYNTH (Unlocked on first tap/keypress for iOS Safari)
+ * 4. RETRO WEB AUDIO SYNTH
  * ========================================================================== */
 const SFX = {
   ctx: null,
@@ -189,13 +276,15 @@ const SFX = {
   },
   beep(freq, dur, type = "square", gainVal = 0.08, slideTo = null) {
     if (this.muted || !this.ctx) return;
+    // Muffle audio slightly if Deaf trait is active
+    const deafFactor = hero.traits.deaf ? 0.35 : 1.0;
     const t = this.ctx.currentTime;
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
     osc.type = type;
-    osc.frequency.setValueAtTime(freq, t);
+    osc.frequency.setValueAtTime(freq * (hero.traits.deaf ? 0.7 : 1), t);
     if (slideTo) osc.frequency.exponentialRampToValueAtTime(slideTo, t + dur);
-    gain.gain.setValueAtTime(gainVal, t);
+    gain.gain.setValueAtTime(gainVal * deafFactor, t);
     gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
     osc.connect(gain);
     gain.connect(this.ctx.destination);
@@ -205,12 +294,14 @@ const SFX = {
 };
 
 /* ============================================================================
- * 4. INPUT MANAGER (Keyboard + Auto-Showing Landscape Touch Controls)
+ * 5. INPUT MANAGER + 0.4s DEAF DELAY BUFFER
  * ========================================================================== */
 const keys = Object.create(null);
 const justPressed = Object.create(null);
 const touchState = { left: false, right: false, up: false, down: false, jump: false, gun: false, bone: false, hat: false };
 const touchUI = document.getElementById("touch-ui");
+
+const inputDelayBuffer = []; // Stores { time, input } for 0.4s Deaf delay
 
 window.addEventListener("keydown", e => {
   SFX.unlock();
@@ -218,19 +309,62 @@ window.addEventListener("keydown", e => {
   if (!keys[e.code]) justPressed[e.code] = true;
   keys[e.code] = true;
 
-  if (e.code === "F2") {
+  if (game.state === "SELECT") {
+    if (e.code === "Digit1") toggleTraitSelection("blind");
+    else if (e.code === "Digit2") toggleTraitSelection("deaf");
+    else if (e.code === "Digit3") toggleTraitSelection("wheeled");
+    else if (e.code === "Digit4") toggleTraitSelection("prosthesis");
+    else if (e.code === "KeyN") {
+      setup.difficulty = "NORMAL";
+      if (setup.selected.length > 1) setup.selected = [setup.selected[0]];
+    } else if (e.code === "KeyH") {
+      setup.difficulty = "HARD";
+    } else if ((e.code === "Enter" || e.code === "Space") && setup.selected.length === requiredTraitCount()) {
+      startEpisodeWithSelectedTraits();
+    }
+    return;
+  }
+
+  if (e.code === "Tab") {
+    e.preventDefault();
+    game.state = "SELECT";
+  } else if (e.code === "F2") {
     e.preventDefault();
     game.debug = !game.debug;
   } else if (e.code === "KeyM") {
     SFX.muted = !SFX.muted;
   } else if (e.code === "KeyR" && (game.state === "GAMEOVER" || game.state === "VICTORY")) {
-    resetEpisode();
+    startEpisodeWithSelectedTraits();
   }
 });
 
 window.addEventListener("keyup", e => {
   keys[e.code] = false;
 });
+
+function handleCanvasPointer(clientX, clientY) {
+  SFX.unlock();
+  if (game.state !== "SELECT") return;
+  const rect = canvas.getBoundingClientRect();
+  const x = ((clientX - rect.left) / rect.width) * W;
+  const y = ((clientY - rect.top) / rect.height) * H;
+
+  for (const box of setup.uiBoxes) {
+    if (x >= box.x && x <= box.x + box.w && y >= box.y && y <= box.y + box.h) {
+      box.onClick();
+      break;
+    }
+  }
+}
+
+canvas.addEventListener("mousedown", e => handleCanvasPointer(e.clientX, e.clientY));
+canvas.addEventListener("touchstart", e => {
+  if (game.state === "SELECT" && e.changedTouches.length > 0) {
+    e.preventDefault();
+    const t = e.changedTouches[0];
+    handleCanvasPointer(t.clientX, t.clientY);
+  }
+}, { passive: false });
 
 function setupTouchControls() {
   const stickBase = document.getElementById("stick-base");
@@ -239,7 +373,7 @@ function setupTouchControls() {
 
   window.addEventListener("touchstart", () => {
     SFX.unlock();
-    touchUI.classList.add("active");
+    if (game.state === "PLAY") touchUI.classList.add("active");
   }, { passive: true });
 
   stickBase.addEventListener("touchstart", e => {
@@ -313,24 +447,49 @@ function setupTouchControls() {
 }
 setupTouchControls();
 
-function readInput() {
-  const left  = !!(keys["ArrowLeft"]  || keys["KeyA"] || touchState.left);
-  const right = !!(keys["ArrowRight"] || keys["KeyD"] || touchState.right);
-  const up    = !!(keys["ArrowUp"]    || keys["KeyW"] || touchState.up);
-  const down  = !!(keys["ArrowDown"]  || keys["KeyS"] || touchState.down);
+function sampleRawInput() {
+  return {
+    left:        !!(keys["ArrowLeft"]  || keys["KeyA"] || touchState.left),
+    right:       !!(keys["ArrowRight"] || keys["KeyD"] || touchState.right),
+    up:          !!(keys["ArrowUp"]    || keys["KeyW"] || touchState.up),
+    down:        !!(keys["ArrowDown"]  || keys["KeyS"] || touchState.down),
+    jumpHeld:    !!(keys["Space"] || keys["KeyZ"] || keys["KeyK"] || touchState.jump),
+    jumpPressed: !!(justPressed["Space"] || justPressed["KeyZ"] || justPressed["KeyK"] || justPressed["TOUCH_JUMP"]),
+    gunHeld:     !!(keys["KeyJ"] || keys["KeyX"] || keys["Enter"] || touchState.gun),
+    bonePressed: !!(justPressed["KeyU"] || justPressed["KeyC"] || justPressed["TOUCH_BONE"]),
+    hatPressed:  !!(justPressed["KeyI"] || justPressed["KeyV"] || keys["ShiftLeft"] || keys["ShiftRight"] || justPressed["TOUCH_HAT"])
+  };
+}
 
-  const jumpHeld    = !!(keys["Space"] || keys["KeyZ"] || keys["KeyK"] || touchState.jump);
-  const jumpPressed = !!(justPressed["Space"] || justPressed["KeyZ"] || justPressed["KeyK"] || justPressed["TOUCH_JUMP"]);
-  const gunHeld     = !!(keys["KeyJ"] || keys["KeyX"] || keys["Enter"] || touchState.gun);
-  const bonePressed = !!(justPressed["KeyU"] || justPressed["KeyC"] || justPressed["TOUCH_BONE"]);
-  const hatPressed  = !!(justPressed["KeyI"] || justPressed["KeyV"] || keys["ShiftLeft"] || keys["ShiftRight"] || justPressed["TOUCH_HAT"]);
+function getEffectiveInput() {
+  const raw = sampleRawInput();
+  if (!hero.traits.deaf) {
+    return raw;
+  }
 
-  return { left, right, up, down, jumpHeld, jumpPressed, gunHeld, bonePressed, hatPressed };
+  // Push current snapshot and pop any snapshot that has aged >= 0.40 seconds
+  inputDelayBuffer.push({ time: game.elapsedTime, input: raw });
+  const targetTime = game.elapsedTime - 0.40;
+  let delayed = {
+    left: false, right: false, up: false, down: false,
+    jumpHeld: false, jumpPressed: false, gunHeld: false, bonePressed: false, hatPressed: false
+  };
+
+  while (inputDelayBuffer.length > 0 && inputDelayBuffer[0].time <= targetTime) {
+    const item = inputDelayBuffer.shift();
+    // Preserve edge-triggered presses across the 0.4s boundary
+    delayed = {
+      ...item.input,
+      jumpPressed: delayed.jumpPressed || item.input.jumpPressed,
+      bonePressed: delayed.bonePressed || item.input.bonePressed,
+      hatPressed:  delayed.hatPressed  || item.input.hatPressed
+    };
+  }
+  return delayed;
 }
 
 /* ============================================================================
- * 5. EPISODE ROOM DEFINITIONS (Spread 01 & Spread 02)
- *    All coordinates match the 984 x 621 opened 楷簿 spread.
+ * 6. EPISODE ROOM DEFINITIONS (Spread 01 & Spread 02)
  * ========================================================================== */
 function createRooms() {
   return [
@@ -339,21 +498,18 @@ function createRooms() {
       pageLeft: "01",
       pageRight: "02",
       bgAsset: "bgRoom0",
-      // Solid impassable blocks (floors & walls)
       solids: [
-        { x: 0,   y: 564, w: 462, h: 57 }, // Left page ground
-        { x: 522, y: 564, w: 462, h: 57 }, // Right page ground (gap at spine!)
-        { x: 0,   y: 0,   w: 28,  h: 564 }, // Far left outer wall
-        { x: 558, y: 396, w: 180, h: 20 }, // Right page stone block
-        { x: 956, y: 0,   w: 28,  h: 420 }  // Upper right wall (open exit below to Room 1!)
+        { x: 0,   y: 564, w: 462, h: 57 },
+        { x: 522, y: 564, w: 462, h: 57 },
+        { x: 0,   y: 0,   w: 28,  h: 564 },
+        { x: 558, y: 396, w: 180, h: 20 },
+        { x: 956, y: 0,   w: 28,  h: 420 }
       ],
-      // One-way platforms (can jump up through, or Down+Jump to drop through)
       oneWay: [
         { x: 102, y: 432, w: 180, h: 12 },
         { x: 282, y: 300, w: 180, h: 12 },
         { x: 558, y: 264, w: 252, h: 12 }
       ],
-      // Climbable ladders
       ladders: [
         { x: 222, y: 432, w: 36, h: 132 },
         { x: 318, y: 300, w: 36, h: 132 },
@@ -385,8 +541,8 @@ function createRooms() {
       pageRight: "04",
       bgAsset: "bgRoom1",
       solids: [
-        { x: 0,   y: 564, w: 984, h: 57 }, // Full spread ground
-        { x: 956, y: 0,   w: 28,  h: 564 }, // Far right outer wall
+        { x: 0,   y: 564, w: 984, h: 57 },
+        { x: 956, y: 0,   w: 28,  h: 564 },
         { x: 252, y: 420, w: 144, h: 20 },
         { x: 594, y: 420, w: 144, h: 20 }
       ],
@@ -423,25 +579,20 @@ function createRooms() {
 }
 
 /* ============================================================================
- * 6. GAME STATE & HERO INITIALIZATION
+ * 7. GAME STATE & HERO INITIALIZATION
  * ========================================================================== */
 const game = {
-  state: "PLAY", // PLAY | TRANSITION | GAMEOVER | VICTORY
+  state: "SELECT", // SELECT | PLAY | TRANSITION | GAMEOVER | VICTORY
   debug: false,
+  elapsedTime: 0,
   rooms: createRooms(),
   roomIdx: 0,
-  stageTimer: 600, // 10 minutes (600 seconds) per episode
+  stageTimer: 600,
   score: 0,
   shakeTimer: 0,
   transition: {
-    active: false,
-    fromIdx: 0,
-    toIdx: 1,
-    dirX: 1,
-    t: 0,
-    duration: 0.32,
-    nextHeroX: 40,
-    nextHeroY: 500
+    active: false, fromIdx: 0, toIdx: 1, dirX: 1,
+    t: 0, duration: 0.32, nextHeroX: 40, nextHeroY: 500
   },
   bullets: [],
   bones: [],
@@ -450,31 +601,31 @@ const game = {
 };
 
 const hero = {
-  x: 64,
-  y: 510,
-  w: 26,
-  h: 44,
-  vx: 0,
-  vy: 0,
-  facing: 1,       // 1 = right, -1 = left
-  aimAngle: 0,     // 5 directions: -PI/2, -PI/4, 0, PI/4, PI/2 (mirrored by facing)
-  grounded: false,
-  onLadder: false,
-  dropThroughTimer: 0,
-  hp: 100,
-  maxHp: 100,
-  invulnTimer: 0,
-  gunCooldown: 0,
-  bones: 0,        // Gained in batches of 4 when eating a roast chicken
-  hasMissileHat: false,
-  hatCooldown: 0,
-  hatMaxCooldown: 4.5,
-  animState: "IDLE",
-  animTimer: 0
+  x: 64, y: 510, w: 26, h: 44,
+  vx: 0, vy: 0, facing: 1, aimAngle: 0,
+  grounded: false, onLadder: false, dropThroughTimer: 0,
+  hp: 100, maxHp: 100, invulnTimer: 0,
+  gunCooldown: 0, bones: 0,
+  hasMissileHat: false, hatCooldown: 0, hatMaxCooldown: 4.5,
+  animState: "IDLE", animTimer: 0,
+  traits: { blind: true, deaf: false, wheeled: false, prosthesis: false },
+  identity: { codeName: "BLIND", splitName: "BL·IN·D", zhTag: "盲" }
 };
 
-function resetEpisode() {
+function startEpisodeWithSelectedTraits() {
+  const chosen = setup.selected.slice(0, requiredTraitCount());
+  if (chosen.length !== requiredTraitCount()) return;
+
+  hero.traits = {
+    blind:      chosen.includes("blind"),
+    deaf:       chosen.includes("deaf"),
+    wheeled:    chosen.includes("wheeled"),
+    prosthesis: chosen.includes("prosthesis")
+  };
+  hero.identity = buildHunterIdentity(chosen);
+
   game.state = "PLAY";
+  game.elapsedTime = 0;
   game.rooms = createRooms();
   game.roomIdx = 0;
   game.stageTimer = 600;
@@ -483,6 +634,7 @@ function resetEpisode() {
   game.bones.length = 0;
   game.missiles.length = 0;
   game.particles.length = 0;
+  inputDelayBuffer.length = 0;
   game.transition.active = false;
 
   Object.assign(hero, {
@@ -495,14 +647,13 @@ function resetEpisode() {
 }
 
 /* ============================================================================
- * 7. PHYSICS, 5-DIRECTION AIMING, WEAPONS & AI STEP (60 FPS)
+ * 8. PHYSICS, TRAIT MODIFIERS & 60 FPS SIMULATION
  * ========================================================================== */
 function rectsOverlap(a, b) {
   return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
 }
 
 function resolveAimVector(input) {
-  // 5-direction aiming: Up, Up+Forward, Forward, Down+Forward, Down
   const horiz = input.left || input.right;
   let vx = hero.facing;
   let vy = 0;
@@ -562,16 +713,23 @@ function damageHero(amount, knockDir) {
 
 function stepHero(input, room) {
   const GRAVITY = 1380;
-  const WALK_SPEED = 205;
-  const CLIMB_SPEED = 140;
-  const JUMP_VEL = -490;
+
+  // Apply trait speed modifiers:
+  // - Wheeled: 1.38x faster horizontal ground speed, 0.45x slower ladder climb
+  // - Prosthesis: 0.62x slower ground speed, slightly lower jump
+  let walkSpeed = 205;
+  if (hero.traits.wheeled)    walkSpeed *= 1.38;
+  if (hero.traits.prosthesis) walkSpeed *= 0.62;
+
+  const climbSpeed = hero.traits.wheeled ? 140 * 0.45 : 140;
+  const jumpVel    = hero.traits.prosthesis ? -445 : -490;
 
   if (hero.invulnTimer > 0) hero.invulnTimer = Math.max(0, hero.invulnTimer - DT);
   if (hero.gunCooldown > 0) hero.gunCooldown = Math.max(0, hero.gunCooldown - DT);
   if (hero.hatCooldown > 0) hero.hatCooldown = Math.max(0, hero.hatCooldown - DT);
   if (hero.dropThroughTimer > 0) hero.dropThroughTimer = Math.max(0, hero.dropThroughTimer - DT);
 
-  // Check ladder overlap
+  // Ladder overlap
   const heroCenter = { x: hero.x + 6, y: hero.y + 4, w: hero.w - 12, h: hero.h };
   const ladder = room.ladders.find(l => rectsOverlap(heroCenter, l));
 
@@ -579,7 +737,7 @@ function stepHero(input, room) {
     hero.onLadder = true;
     hero.grounded = false;
     hero.vx = 0;
-    hero.vy = input.up ? -CLIMB_SPEED : CLIMB_SPEED;
+    hero.vy = input.up ? -climbSpeed : climbSpeed;
     const targetX = ladder.x + (ladder.w - hero.w) / 2;
     hero.x += (targetX - hero.x) * 0.35;
   } else if (!ladder) {
@@ -593,16 +751,16 @@ function stepHero(input, room) {
   if (!hero.onLadder) {
     const moveDir = (input.right ? 1 : 0) - (input.left ? 1 : 0);
     if (hero.invulnTimer < 0.75) {
-      hero.vx = moveDir * WALK_SPEED;
+      hero.vx = moveDir * walkSpeed;
     }
     hero.vy = Math.min(hero.vy + GRAVITY * DT, 760);
   } else if (!input.up && !input.down) {
     hero.vy = 0;
     const moveDir = (input.right ? 1 : 0) - (input.left ? 1 : 0);
-    hero.vx = moveDir * WALK_SPEED * 0.75;
+    hero.vx = moveDir * walkSpeed * 0.75;
   }
 
-  // Drop through one-way platform if Down + Jump
+  // Jump / Drop through ledge
   if (input.jumpPressed && input.down && hero.grounded && !hero.onLadder) {
     hero.dropThroughTimer = 0.18;
     hero.grounded = false;
@@ -610,7 +768,7 @@ function stepHero(input, room) {
   } else if (input.jumpPressed && (hero.grounded || hero.onLadder)) {
     hero.onLadder = false;
     hero.grounded = false;
-    hero.vy = JUMP_VEL;
+    hero.vy = jumpVel;
     SFX.beep(320, 0.11, "square", 0.06, 540);
   }
 
@@ -624,7 +782,7 @@ function stepHero(input, room) {
     }
   }
 
-  // Move Y & resolve solid floors/ceilings + one-way ledges
+  // Move Y & resolve solid floors + one-way ledges
   const prevBottom = hero.y + hero.h;
   hero.y += hero.vy * DT;
   hero.grounded = false;
@@ -657,7 +815,7 @@ function stepHero(input, room) {
     }
   }
 
-  // Pit fall check (e.g. falling into the center spine gap!)
+  // Pit fall recovery
   if (hero.y > H + 20) {
     damageHero(35, -hero.facing);
     hero.x = 80;
@@ -680,66 +838,60 @@ function stepHero(input, room) {
   // Animation state
   if (hero.onLadder) {
     hero.animState = "CLIMB";
-    if (Math.abs(hero.vy) > 1) hero.animTimer += DT * 9;
+    if (Math.abs(hero.vy) > 1) hero.animTimer += DT * (hero.traits.wheeled ? 5 : 9);
   } else if (!hero.grounded) {
     hero.animState = "JUMP";
   } else if (Math.abs(hero.vx) > 5) {
     hero.animState = "RUN";
-    hero.animTimer += DT * 12;
+    hero.animTimer += DT * (hero.traits.wheeled ? 18 : 12);
   } else {
     hero.animState = "IDLE";
     hero.animTimer = 0;
   }
 
-  // 5-angle aim & weapons
+  // 5-angle aim
   const aim = resolveAimVector(input);
+
+  // Wheeled hunter uses both hands to carry weapon & wheelchair on ladders -> cannot shoot on ladder!
+  const canFireWeapons = !(hero.traits.wheeled && hero.onLadder);
+  if (!canFireWeapons) return;
+
   const muzzleX = hero.x + hero.w / 2 + aim.vx * 16;
   const muzzleY = hero.y + hero.h * 0.45 + aim.vy * 16;
 
-  // 1) Machine Gun (Default, unlimited ammo, strictly HALF SCREEN range = HALF_W)
+  // 1) Machine Gun (Half-screen range = HALF_W)
   if (input.gunHeld && hero.gunCooldown <= 0) {
     hero.gunCooldown = 0.11;
     const bulletSpeed = 640;
     game.bullets.push({
-      x: muzzleX,
-      y: muzzleY,
-      vx: aim.vx * bulletSpeed,
-      vy: aim.vy * bulletSpeed,
-      traveled: 0,
-      maxRange: HALF_W, // 492 px = half the screen width!
-      damage: 10
+      x: muzzleX, y: muzzleY,
+      vx: aim.vx * bulletSpeed, vy: aim.vy * bulletSpeed,
+      traveled: 0, maxRange: HALF_W, damage: 10
     });
     SFX.beep(780, 0.045, "square", 0.05, 320);
   }
 
-  // 2) Chicken Bone Throw (4 per chicken eaten, infinite range until wall/enemy)
+  // 2) Chicken Bone Throw (Infinite range until wall or enemy)
   if (input.bonePressed && hero.bones > 0) {
     hero.bones--;
     const throwSpeed = 420;
     game.bones.push({
-      x: muzzleX,
-      y: muzzleY - 4,
+      x: muzzleX, y: muzzleY - 4,
       vx: aim.vx * throwSpeed + hero.vx * 0.2,
       vy: aim.vy * throwSpeed - 190,
-      rot: 0,
-      damage: 55
+      rot: 0, damage: 55
     });
     SFX.beep(440, 0.12, "triangle", 0.09, 680);
   }
 
-  // 3) Mini-Missile Hat (Unlimited ammo with cooldown once collected)
+  // 3) Mini-Missile Hat (Cooldown weapon)
   if (input.hatPressed && hero.hasMissileHat && hero.hatCooldown <= 0) {
     hero.hatCooldown = hero.hatMaxCooldown;
     game.missiles.push({
-      x: hero.x + hero.w / 2,
-      y: hero.y - 4,
-      vx: aim.vx * 520,
-      vy: aim.vy * 520 - 80,
-      targetVx: aim.vx * 560,
-      targetVy: aim.vy * 560,
-      timer: 0,
-      damage: 110,
-      splashRadius: 72
+      x: hero.x + hero.w / 2, y: hero.y - 4,
+      vx: aim.vx * 520, vy: aim.vy * 520 - 80,
+      targetVx: aim.vx * 560, targetVy: aim.vy * 560,
+      timer: 0, damage: 110, splashRadius: 72
     });
     SFX.beep(260, 0.22, "sawtooth", 0.1, 720);
   }
@@ -748,14 +900,8 @@ function stepHero(input, room) {
 function startRoomTransition(toIdx, dirX, nextHeroX, nextHeroY) {
   game.state = "TRANSITION";
   game.transition = {
-    active: true,
-    fromIdx: game.roomIdx,
-    toIdx,
-    dirX,
-    t: 0,
-    duration: 0.32,
-    nextHeroX,
-    nextHeroY
+    active: true, fromIdx: game.roomIdx, toIdx, dirX,
+    t: 0, duration: 0.32, nextHeroX, nextHeroY
   };
   game.bullets.length = 0;
   game.bones.length = 0;
@@ -763,14 +909,13 @@ function startRoomTransition(toIdx, dirX, nextHeroX, nextHeroY) {
 }
 
 function stepProjectilesAndPickups(room) {
-  // Pickups
   for (const p of room.pickups) {
     if (p.collected) continue;
     if (rectsOverlap(hero, p)) {
       p.collected = true;
       if (p.type === "chicken") {
         hero.hp = Math.min(hero.maxHp, hero.hp + 45);
-        hero.bones = 4; // Eating 1 chicken grants 4 throwable bones!
+        hero.bones = 4;
         game.score += 200;
         spawnParticles(p.x + p.w / 2, p.y + p.h / 2, "#e08a2e", 10, 140);
         SFX.beep(520, 0.18, "triangle", 0.1, 880);
@@ -785,7 +930,8 @@ function stepProjectilesAndPickups(room) {
         spawnParticles(p.x + p.w / 2, p.y + p.h / 2, "#29b6f6", 10, 140);
         SFX.beep(660, 0.14, "sine", 0.1, 1040);
       } else if (p.type === "treasure") {
-        game.score += 2000 + Math.floor(game.stageTimer) * 5;
+        const diffBonus = setup.difficulty === "HARD" ? 3000 : 1000;
+        game.score += 2000 + diffBonus + Math.floor(game.stageTimer) * 5;
         spawnParticles(p.x + p.w / 2, p.y + p.h / 2, "#ffd700", 24, 220);
         SFX.beep(523, 0.4, "square", 0.12, 1046);
         game.state = "VICTORY";
@@ -793,7 +939,6 @@ function stepProjectilesAndPickups(room) {
     }
   }
 
-  // 1) Machine Gun Bullets (Limited to HALF_W range!)
   for (let i = game.bullets.length - 1; i >= 0; i--) {
     const b = game.bullets[i];
     const stepX = b.vx * DT;
@@ -802,14 +947,12 @@ function stepProjectilesAndPickups(room) {
     b.y += stepY;
     b.traveled += Math.hypot(stepX, stepY);
 
-    // Dissipate at half-screen distance
     if (b.traveled >= b.maxRange) {
       spawnParticles(b.x, b.y, "#64748b", 3, 60);
       game.bullets.splice(i, 1);
       continue;
     }
 
-    // Wall/Floor hit
     const hitSolid = room.solids.some(s => b.x >= s.x && b.x <= s.x + s.w && b.y >= s.y && b.y <= s.y + s.h);
     if (hitSolid) {
       spawnParticles(b.x, b.y, "#1e3a8a", 4, 80);
@@ -817,7 +960,6 @@ function stepProjectilesAndPickups(room) {
       continue;
     }
 
-    // Enemy hit
     let hitEnemy = false;
     for (const e of room.enemies) {
       if (!e.alive) continue;
@@ -830,7 +972,6 @@ function stepProjectilesAndPickups(room) {
     if (hitEnemy) game.bullets.splice(i, 1);
   }
 
-  // 2) Thrown Chicken Bones (Infinite range until hitting a wall/floor or enemy!)
   for (let i = game.bones.length - 1; i >= 0; i--) {
     const bone = game.bones[i];
     bone.vy += 860 * DT;
@@ -838,7 +979,6 @@ function stepProjectilesAndPickups(room) {
     bone.y += bone.vy * DT;
     bone.rot += 15 * DT;
 
-    // Only despawn if it drops well below the page or hits a solid wall/floor or enemy
     if (bone.y > H + 80) {
       game.bones.splice(i, 1);
       continue;
@@ -865,7 +1005,6 @@ function stepProjectilesAndPickups(room) {
     if (hitEnemy) game.bones.splice(i, 1);
   }
 
-  // 3) Hat Mini-Missiles (High splash damage)
   for (let i = game.missiles.length - 1; i >= 0; i--) {
     const m = game.missiles[i];
     m.timer += DT;
@@ -885,7 +1024,6 @@ function stepProjectilesAndPickups(room) {
     const hitEnemy = room.enemies.some(e => e.alive && m.x >= e.x && m.x <= e.x + e.w && m.y >= e.y && m.y <= e.y + e.h);
 
     if (outOfBounds || hitSolid || hitEnemy) {
-      // Splash explosion
       game.shakeTimer = 0.22;
       spawnParticles(m.x, m.y, "#ef4444", 18, 230);
       SFX.beep(110, 0.26, "sawtooth", 0.14, 42);
@@ -946,7 +1084,7 @@ function stepEnemies(room) {
         }
       } else if (e.aiState === "WINDUP") {
         e.aiTimer -= DT;
-        e.rodAngle = -1.35; // Raised ruler/rod behind head
+        e.rodAngle = -1.35;
         if (e.aiTimer <= 0) {
           e.aiState = "STRIKE";
           e.aiTimer = 0.16;
@@ -955,7 +1093,7 @@ function stepEnemies(room) {
         }
       } else if (e.aiState === "STRIKE") {
         e.aiTimer -= DT;
-        e.rodAngle = 1.45; // Slams rod forward
+        e.rodAngle = 1.45;
         if (!e.struckThisSwing) {
           const rodBox = {
             x: e.facing === 1 ? e.x + e.w * 0.5 : e.x + e.w * 0.5 - e.rodLength,
@@ -999,13 +1137,12 @@ function stepParticles() {
 }
 
 /* ============================================================================
- * 8. RENDERER: OPENED 楷簿 (328x207mm), INK TERRAIN, BLIND HERO & GIANT
+ * 9. RENDERING: 楷簿, BLIND SIGHT CIRCLE, HERO & HUNTER SETUP SCREEN
  * ========================================================================== */
 function drawKaaiBouSpread(room, offsetX) {
   ctx.save();
   ctx.translate(offsetX, 0);
 
-  // If user added a custom AI background image for this room, draw it first
   const customBg = ASSETS[room.bgAsset];
   if (customBg && customBg.loaded) {
     ctx.drawImage(customBg, 0, 0, W, H);
@@ -1013,11 +1150,10 @@ function drawKaaiBouSpread(room, offsetX) {
     return;
   }
 
-  // Procedural HK Traditional Exercise Book (楷簿) Paper
   const paperGrad = ctx.createLinearGradient(0, 0, W, 0);
   paperGrad.addColorStop(0.00, "#f3ebd6");
   paperGrad.addColorStop(0.47, "#faf5e8");
-  paperGrad.addColorStop(0.50, "#dcd1b8"); // Center book crease shadow
+  paperGrad.addColorStop(0.50, "#dcd1b8");
   paperGrad.addColorStop(0.53, "#faf5e8");
   paperGrad.addColorStop(1.00, "#f3ebd6");
   ctx.fillStyle = paperGrad;
@@ -1026,7 +1162,6 @@ function drawKaaiBouSpread(room, offsetX) {
   drawSinglePageGrid(0, room.pageLeft);
   drawSinglePageGrid(HALF_W, room.pageRight);
 
-  // Center fold line + 2 metal staples
   ctx.strokeStyle = "rgba(85, 75, 60, 0.45)";
   ctx.lineWidth = 2;
   ctx.beginPath();
@@ -1038,14 +1173,12 @@ function drawKaaiBouSpread(room, offsetX) {
   ctx.fillRect(HALF_W - 2, H * 0.25 - 12, 4, 24);
   ctx.fillRect(HALF_W - 2, H * 0.75 - 12, 4, 24);
 
-  // Draw Impassable Solids (Blue Ballpoint Pen Ink Blocks)
   for (const s of room.solids) {
     ctx.fillStyle = "#1e3a8a";
     ctx.fillRect(s.x, s.y, s.w, s.h);
     ctx.strokeStyle = "#0f172a";
     ctx.lineWidth = 2;
     ctx.strokeRect(s.x + 1, s.y + 1, s.w - 2, s.h - 2);
-    // Subtle cross-hatch ink lines
     ctx.strokeStyle = "rgba(255, 255, 255, 0.16)";
     ctx.beginPath();
     for (let hx = s.x + 8; hx < s.x + s.w - 4; hx += 14) {
@@ -1055,14 +1188,12 @@ function drawKaaiBouSpread(room, offsetX) {
     ctx.stroke();
   }
 
-  // Draw One-Way Ledges (Red Teacher-Pen Double Rules)
   for (const p of room.oneWay) {
     ctx.fillStyle = "#b91c1c";
     ctx.fillRect(p.x, p.y, p.w, 5);
     ctx.fillRect(p.x, p.y + 8, p.w, 3);
   }
 
-  // Draw Ladders (Pencil/Ink Rungs)
   for (const l of room.ladders) {
     ctx.strokeStyle = "#334155";
     ctx.lineWidth = 3;
@@ -1082,15 +1213,14 @@ function drawKaaiBouSpread(room, offsetX) {
 }
 
 function drawSinglePageGrid(pageX, pageLabel) {
-  const margin = 10 * SCALE;  // 30 px
-  const headerH = 16 * SCALE; // 48 px
+  const margin = 10 * SCALE;
+  const headerH = 16 * SCALE;
   const left = pageX + margin;
   const top = margin + headerH;
   const gridW = HALF_W - margin * 2;
   const gridH = H - top - margin;
-  const cell = 36; // 12 mm square cells
+  const cell = 36;
 
-  // Red outer box & header line
   ctx.strokeStyle = "rgba(195, 65, 65, 0.65)";
   ctx.lineWidth = 2;
   ctx.strokeRect(left, margin, gridW, H - margin * 2);
@@ -1105,7 +1235,6 @@ function drawSinglePageGrid(pageX, pageLabel) {
   ctx.fillText("成績：", left + gridW - 115, margin + 30);
   ctx.fillText("P." + pageLabel, left + gridW / 2 - 14, margin + 30);
 
-  // Green square grid (方格)
   ctx.strokeStyle = "rgba(56, 142, 92, 0.36)";
   ctx.lineWidth = 1;
   ctx.beginPath();
@@ -1124,7 +1253,6 @@ function drawRoomEntities(room, offsetX) {
   ctx.save();
   ctx.translate(offsetX, 0);
 
-  // Pickups
   for (const p of room.pickups) {
     if (p.collected) continue;
     const bob = Math.sin(performance.now() * 0.006) * 3;
@@ -1173,7 +1301,6 @@ function drawRoomEntities(room, offsetX) {
     }
   }
 
-  // Enemies
   for (const e of room.enemies) {
     if (!e.alive) continue;
     if (e.kind === "crawler") {
@@ -1209,23 +1336,20 @@ function drawGiant(g) {
   if (ASSETS.giant.loaded) {
     ctx.drawImage(ASSETS.giant, -g.w / 2, -g.h, g.w, g.h);
   } else {
-    // Sketch-ink Giant body
     ctx.fillStyle = g.hurtTimer > 0 ? "#ef4444" : "#475569";
     ctx.fillRect(-g.w / 2, -g.h + 22, g.w, g.h - 22);
     ctx.fillStyle = "#cbd5e1";
     ctx.fillRect(-16, -g.h, 32, 24);
     ctx.fillStyle = "#dc2626";
-    ctx.fillRect(4, -g.h + 7, 8, 5); // Glowing eye
+    ctx.fillRect(4, -g.h + 7, 8, 5);
   }
 
-  // Giant's Swinging Ruler / Rod
   ctx.save();
   ctx.translate(8, -g.h * 0.56);
   ctx.rotate(g.rodAngle);
   if (ASSETS.giantRod.loaded) {
     ctx.drawImage(ASSETS.giantRod, -6, -g.rodLength, 14, g.rodLength);
   } else {
-    // Yellow wooden school ruler (間尺)
     ctx.fillStyle = "#f59e0b";
     ctx.fillRect(-5, -g.rodLength, 12, g.rodLength);
     ctx.strokeStyle = "#78350f";
@@ -1240,10 +1364,8 @@ function drawGiant(g) {
     ctx.stroke();
   }
   ctx.restore();
-
   ctx.restore();
 
-  // Giant HP bar
   ctx.fillStyle = "#1e293b";
   ctx.fillRect(g.x, g.y - 12, g.w, 6);
   ctx.fillStyle = "#dc2626";
@@ -1262,8 +1384,8 @@ function drawHero() {
     ctx.scale(hero.facing, 1);
     ctx.drawImage(ASSETS.hero, -hero.w / 2, -hero.h, hero.w, hero.h);
   } else {
-    // Legs
-    ctx.fillStyle = "#1e3a8a";
+    // Legs (silver metallic tint if Prosthesis trait is active)
+    ctx.fillStyle = hero.traits.prosthesis ? "#94a3b8" : "#1e3a8a";
     ctx.fillRect(cx - 7 + swing, hero.y + 30, 5, 14);
     ctx.fillRect(cx + 2 - swing, hero.y + 30, 5, 14);
 
@@ -1271,14 +1393,37 @@ function drawHero() {
     ctx.fillStyle = "#b45309";
     ctx.fillRect(cx - 9, hero.y + 15, 18, 16);
 
-    // Head + Dark Sunglasses (The Blind Treasure Hunter)
+    // Head + Dark Sunglasses (if Blind trait is active)
     ctx.fillStyle = "#f3c69f";
     ctx.fillRect(cx - 7, hero.y + 3, 14, 12);
-    ctx.fillStyle = "#0f172a"; // Dark blind glasses
-    ctx.fillRect(hero.facing === 1 ? cx - 2 : cx - 7, hero.y + 6, 9, 4);
+    if (hero.traits.blind) {
+      ctx.fillStyle = "#0f172a";
+      ctx.fillRect(hero.facing === 1 ? cx - 2 : cx - 7, hero.y + 6, 9, 4);
+    } else {
+      ctx.fillStyle = "#0f172a";
+      ctx.fillRect(hero.facing === 1 ? cx + 2 : cx - 5, hero.y + 6, 3, 3);
+    }
+
+    // Wheelchair visual (if Wheeled trait is active)
+    if (hero.traits.wheeled) {
+      if (hero.onLadder) {
+        // Strapped on back while climbing ladder with both hands
+        ctx.strokeStyle = "#334155";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(cx - hero.facing * 8, hero.y + 24, 8, 0, Math.PI * 2);
+        ctx.stroke();
+      } else {
+        ctx.strokeStyle = "#1e293b";
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.arc(cx, hero.y + 36, 9, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
   }
 
-  // Mini-Missile Hat (if obtained)
+  // Mini-Missile Hat
   if (hero.hasMissileHat) {
     const ready = hero.hatCooldown <= 0;
     ctx.fillStyle = ready ? "#facc15" : "#854d0e";
@@ -1290,20 +1435,28 @@ function drawHero() {
     }
   }
 
-  // Machine Gun pivoted along the 5-direction aimAngle
-  ctx.save();
-  ctx.translate(cx, hero.y + hero.h * 0.45);
-  ctx.rotate(hero.aimAngle);
-  ctx.fillStyle = "#0f172a";
-  ctx.fillRect(2, -3, 18, 5);
-  ctx.fillRect(6, 2, 4, 5);
-  ctx.restore();
+  // Machine gun (holstered on back if Wheeled & climbing ladder!)
+  if (hero.traits.wheeled && hero.onLadder) {
+    ctx.save();
+    ctx.translate(cx - hero.facing * 6, hero.y + 22);
+    ctx.rotate(-1.2 * hero.facing);
+    ctx.fillStyle = "#0f172a";
+    ctx.fillRect(-8, -2, 16, 4);
+    ctx.restore();
+  } else {
+    ctx.save();
+    ctx.translate(cx, hero.y + hero.h * 0.45);
+    ctx.rotate(hero.aimAngle);
+    ctx.fillStyle = "#0f172a";
+    ctx.fillRect(2, -3, 18, 5);
+    ctx.fillRect(6, 2, 4, 5);
+    ctx.restore();
+  }
 
   ctx.restore();
 }
 
 function drawProjectilesAndParticles() {
-  // Machine gun bullets
   ctx.fillStyle = "#1d4ed8";
   for (const b of game.bullets) {
     ctx.beginPath();
@@ -1311,7 +1464,6 @@ function drawProjectilesAndParticles() {
     ctx.fill();
   }
 
-  // Spinning chicken bones
   for (const bone of game.bones) {
     ctx.save();
     ctx.translate(bone.x, bone.y);
@@ -1334,7 +1486,6 @@ function drawProjectilesAndParticles() {
     ctx.restore();
   }
 
-  // Hat mini-missiles
   for (const m of game.missiles) {
     ctx.save();
     ctx.translate(m.x, m.y);
@@ -1346,7 +1497,6 @@ function drawProjectilesAndParticles() {
     ctx.restore();
   }
 
-  // Particles
   for (const p of game.particles) {
     ctx.globalAlpha = Math.max(0, p.life / p.maxLife);
     ctx.fillStyle = p.color;
@@ -1355,50 +1505,76 @@ function drawProjectilesAndParticles() {
   ctx.globalAlpha = 1;
 }
 
-function drawHUD() {
-  // Top arcade status bar above grid header
-  ctx.fillStyle = "rgba(15, 23, 42, 0.88)";
-  ctx.fillRect(0, 0, W, 24);
+function drawBlindSightMask() {
+  if (!hero.traits.blind || game.debug) return;
 
-  ctx.fillStyle = "#f8fafc";
+  const cx = hero.x + hero.w / 2;
+  const cy = hero.y + hero.h * 0.45;
+  const sightRadius = 145;
+
+  sightCtx.globalCompositeOperation = "source-over";
+  sightCtx.clearRect(0, 0, W, H);
+  sightCtx.fillStyle = "rgba(12, 16, 28, 0.94)";
+  sightCtx.fillRect(0, 0, W, H);
+
+  sightCtx.globalCompositeOperation = "destination-out";
+  const grad = sightCtx.createRadialGradient(cx, cy, sightRadius * 0.62, cx, cy, sightRadius);
+  grad.addColorStop(0, "rgba(0, 0, 0, 1)");
+  grad.addColorStop(1, "rgba(0, 0, 0, 0)");
+  sightCtx.fillStyle = grad;
+  sightCtx.beginPath();
+  sightCtx.arc(cx, cy, sightRadius, 0, Math.PI * 2);
+  sightCtx.fill();
+
+  ctx.drawImage(sightCanvas, 0, 0);
+}
+
+function drawHUD() {
+  ctx.fillStyle = "rgba(15, 23, 42, 0.92)";
+  ctx.fillRect(0, 0, W, 26);
+
+  // Dynamic 3-Part Hunter Name Badge
+  ctx.fillStyle = "#facc15";
   ctx.font = "bold 13px monospace";
-  ctx.fillText(`THE BLIND TREASURE`, 14, 16);
+  ctx.fillText(`HUNTER: ${hero.identity.splitName} [${hero.identity.zhTag}]`, 12, 17);
 
   // HP Bar
   ctx.fillStyle = "#ef4444";
-  ctx.fillText(`HP:`, 200, 16);
+  ctx.fillText(`HP:`, 235, 17);
   ctx.fillStyle = "#334155";
-  ctx.fillRect(228, 6, 100, 12);
+  ctx.fillRect(262, 7, 90, 12);
   ctx.fillStyle = "#22c55e";
-  ctx.fillRect(228, 6, Math.max(0, hero.hp), 12);
+  ctx.fillRect(262, 7, Math.max(0, hero.hp * 0.9), 12);
 
-  // Chicken Bones Count (max 4)
+  // Bones & Hat
   ctx.fillStyle = "#fef08a";
-  ctx.fillText(`BONES: ${hero.bones}/4`, 348, 16);
+  ctx.fillText(`BONES:${hero.bones}/4`, 366, 17);
 
-  // Special Hat Status
   if (!hero.hasMissileHat) {
     ctx.fillStyle = "#94a3b8";
-    ctx.fillText(`HAT: NONE`, 460, 16);
+    ctx.fillText(`HAT:--`, 460, 17);
   } else if (hero.hatCooldown <= 0) {
     ctx.fillStyle = "#facc15";
-    ctx.fillText(`HAT: READY!`, 460, 16);
+    ctx.fillText(`HAT:READY`, 460, 17);
   } else {
     ctx.fillStyle = "#fb923c";
-    ctx.fillText(`HAT: ${hero.hatCooldown.toFixed(1)}s`, 460, 16);
+    ctx.fillText(`HAT:${hero.hatCooldown.toFixed(1)}s`, 460, 17);
   }
 
-  // Episode Timer & Score
+  // Mode, Timer, Score & Switch Hunter
   const mins = Math.floor(game.stageTimer / 60);
   const secs = Math.floor(game.stageTimer % 60).toString().padStart(2, "0");
-  ctx.fillStyle = game.stageTimer < 60 ? "#f87171" : "#38bdf8";
-  ctx.fillText(`TIME ${mins}:${secs}`, 610, 16);
+  ctx.fillStyle = setup.difficulty === "HARD" ? "#f87171" : "#38bdf8";
+  ctx.fillText(`${setup.difficulty}`, 555, 17);
+
+  ctx.fillStyle = game.stageTimer < 60 ? "#f87171" : "#f8fafc";
+  ctx.fillText(`${mins}:${secs}`, 615, 17);
 
   ctx.fillStyle = "#f8fafc";
-  ctx.fillText(`SCORE ${game.score.toString().padStart(6, "0")}`, 740, 16);
-  ctx.fillText(`[F2] DEBUG`, 895, 16);
+  ctx.fillText(`SCR:${game.score.toString().padStart(6, "0")}`, 670, 17);
+  ctx.fillStyle = "#cbd5e1";
+  ctx.fillText(`[TAB]HUNTER [F2]DBG`, 785, 17);
 
-  // F2 Debug Overlay (Hitboxes + Half-Screen Machine Gun Range Circle)
   if (game.debug) {
     const room = game.rooms[game.roomIdx];
     ctx.save();
@@ -1419,28 +1595,207 @@ function drawHUD() {
     ctx.restore();
   }
 
-  // End-of-Run Banners
   if (game.state === "GAMEOVER" || game.state === "VICTORY") {
-    ctx.fillStyle = "rgba(15, 23, 42, 0.78)";
+    ctx.fillStyle = "rgba(15, 23, 42, 0.82)";
     ctx.fillRect(0, 0, W, H);
     ctx.fillStyle = game.state === "VICTORY" ? "#facc15" : "#f87171";
-    ctx.font = "bold 40px monospace";
+    ctx.font = "bold 36px monospace";
     ctx.textAlign = "center";
-    ctx.fillText(game.state === "VICTORY" ? "EPISODE TREASURE FOUND!" : "TIME / HP EXHAUSTED", W / 2, H / 2 - 20);
+    ctx.fillText(game.state === "VICTORY" ? "EPISODE TREASURE FOUND!" : "TIME / HP EXHAUSTED", W / 2, H / 2 - 36);
+    ctx.fillStyle = "#38bdf8";
+    ctx.font = "bold 20px monospace";
+    ctx.fillText(`HUNTER: ${hero.identity.codeName} (${hero.identity.splitName}) — ${setup.difficulty}`, W / 2, H / 2 + 4);
     ctx.fillStyle = "#f8fafc";
-    ctx.font = "18px monospace";
-    ctx.fillText(`FINAL SCORE: ${game.score}  —  PRESS [R] TO PLAY AGAIN`, W / 2, H / 2 + 28);
+    ctx.font = "17px monospace";
+    ctx.fillText(`FINAL SCORE: ${game.score}  |  [R] RETRY  |  [TAB] CHANGE HUNTER`, W / 2, H / 2 + 44);
     ctx.textAlign = "left";
   }
 }
 
+function drawSelectScreen() {
+  setup.uiBoxes.length = 0;
+
+  // Draw the 楷簿 background spread underneath
+  drawKaaiBouSpread(game.rooms[0], 0);
+
+  // Translucent ink card overlay
+  ctx.fillStyle = "rgba(15, 23, 42, 0.86)";
+  ctx.fillRect(36, 24, W - 72, H - 48);
+  ctx.strokeStyle = "#facc15";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(36, 24, W - 72, H - 48);
+
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#facc15";
+  ctx.font = "bold 26px monospace";
+  ctx.fillText("UNBOUND RELICS  無界尋寶錄", W / 2, 62);
+
+  ctx.fillStyle = "#cbd5e1";
+  ctx.font = "14px monospace";
+  ctx.fillText("SELECT DIFFICULTY & TRAITS (NORMAL = PICK 1  |  HARD = PICK 3 IN ORDER)", W / 2, 86);
+
+  // Difficulty Buttons
+  const diffBtns = [
+    { id: "NORMAL", label: "NORMAL (1 TRAIT) [N]", x: W / 2 - 250, y: 102, w: 235, h: 38 },
+    { id: "HARD",   label: "HARD (3 TRAITS) [H]",  x: W / 2 + 15,  y: 102, w: 235, h: 38 }
+  ];
+
+  for (const b of diffBtns) {
+    const active = setup.difficulty === b.id;
+    ctx.fillStyle = active ? "#eab308" : "#1e293b";
+    ctx.fillRect(b.x, b.y, b.w, b.h);
+    ctx.strokeStyle = active ? "#fef08a" : "#64748b";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(b.x, b.y, b.w, b.h);
+
+    ctx.fillStyle = active ? "#0f172a" : "#f8fafc";
+    ctx.font = "bold 15px monospace";
+    ctx.fillText(b.label, b.x + b.w / 2, b.y + 24);
+
+    setup.uiBoxes.push({
+      x: b.x, y: b.y, w: b.w, h: b.h,
+      onClick: () => {
+        setup.difficulty = b.id;
+        if (b.id === "NORMAL" && setup.selected.length > 1) {
+          setup.selected = [setup.selected[0]];
+        }
+      }
+    });
+  }
+
+  // 4 Trait Cards (2x2 Grid)
+  const cardW = 420;
+  const cardH = 116;
+  const startX = 60;
+  const startY = 158;
+  const gapX = 24;
+  const gapY = 16;
+
+  TRAIT_ORDER.forEach((traitId, idx) => {
+    const t = TRAIT_DEFS[traitId];
+    const col = idx % 2;
+    const row = Math.floor(idx / 2);
+    const cx = startX + col * (cardW + gapX);
+    const cy = startY + row * (cardH + gapY);
+
+    const pickOrder = setup.selected.indexOf(traitId); // 0, 1, 2, or -1
+    const isSelected = pickOrder !== -1;
+
+    ctx.fillStyle = isSelected ? "rgba(30, 58, 138, 0.9)" : "rgba(30, 41, 59, 0.9)";
+    ctx.fillRect(cx, cy, cardW, cardH);
+    ctx.strokeStyle = isSelected ? "#facc15" : "#475569";
+    ctx.lineWidth = isSelected ? 3 : 1.5;
+    ctx.strokeRect(cx, cy, cardW, cardH);
+
+    // Highlight which syllable part is active for this slot
+    ctx.textAlign = "left";
+    ctx.font = "bold 20px monospace";
+    let partX = cx + 16;
+    t.parts.forEach((part, pIdx) => {
+      const contributes = isSelected && (setup.difficulty === "NORMAL" || pickOrder === pIdx);
+      ctx.fillStyle = contributes ? "#facc15" : "#94a3b8";
+      ctx.fillText(part, partX, cy + 34);
+      partX += ctx.measureText(part).width + 14;
+    });
+
+    // Chinese badge + Slot tag
+    ctx.textAlign = "right";
+    ctx.fillStyle = isSelected ? "#38bdf8" : "#64748b";
+    ctx.font = "bold 15px monospace";
+    const slotLabel = !isSelected
+      ? `[KEY ${idx + 1}]`
+      : (setup.difficulty === "NORMAL" ? `ACTIVE [${t.zh}]` : `SLOT ${pickOrder + 1}/3 [${t.zh}]`);
+    ctx.fillText(slotLabel, cx + cardW - 14, cy + 32);
+
+    // Description
+    ctx.textAlign = "left";
+    ctx.fillStyle = "#e2e8f0";
+    ctx.font = "13px monospace";
+    ctx.fillText(t.desc, cx + 16, cy + 66);
+
+    ctx.fillStyle = "#94a3b8";
+    ctx.font = "12px monospace";
+    ctx.fillText(
+      setup.difficulty === "HARD"
+        ? `Slot 1 -> "${t.parts[0]}" | Slot 2 -> "${t.parts[1]}" | Slot 3 -> "${t.parts[2]}"`
+        : `Full Name -> "${t.parts.join("")}"`,
+      cx + 16,
+      cy + 94
+    );
+
+    setup.uiBoxes.push({
+      x: cx, y: cy, w: cardW, h: cardH,
+      onClick: () => toggleTraitSelection(traitId)
+    });
+  });
+
+  // Generated Hunter Name Preview Box
+  const needed = requiredTraitCount();
+  const ready = setup.selected.length === needed;
+  const preview = buildHunterIdentity(setup.selected);
+
+  ctx.fillStyle = "#0f172a";
+  ctx.fillRect(60, 424, W - 120, 68);
+  ctx.strokeStyle = ready ? "#22c55e" : "#64748b";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(60, 424, W - 120, 68);
+
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#94a3b8";
+  ctx.font = "13px monospace";
+  ctx.fillText(
+    ready
+      ? "GENERATED TREASURE HUNTER CODE-NAME:"
+      : `PICK ${needed - setup.selected.length} MORE TRAIT(S) TO FORM HUNTER NAME:`,
+    W / 2,
+    446
+  );
+
+  ctx.fillStyle = ready ? "#facc15" : "#64748b";
+  ctx.font = "bold 24px monospace";
+  ctx.fillText(
+    ready ? `${preview.codeName}   (${preview.splitName}  |  ${preview.zhTag})` : preview.splitName,
+    W / 2,
+    478
+  );
+
+  // Start Episode Button
+  const btnX = W / 2 - 170;
+  const btnY = 508;
+  const btnW = 340;
+  const btnH = 48;
+  ctx.fillStyle = ready ? "#16a34a" : "#334155";
+  ctx.fillRect(btnX, btnY, btnW, btnH);
+  ctx.strokeStyle = ready ? "#86efac" : "#475569";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(btnX, btnY, btnW, btnH);
+
+  ctx.fillStyle = ready ? "#ffffff" : "#94a3b8";
+  ctx.font = "bold 18px monospace";
+  ctx.fillText(ready ? "START EPISODE 1 [ENTER]" : `SELECT ${needed} TRAIT(S)`, W / 2, btnY + 30);
+
+  if (ready) {
+    setup.uiBoxes.push({
+      x: btnX, y: btnY, w: btnW, h: btnH,
+      onClick: () => startEpisodeWithSelectedTraits()
+    });
+  }
+
+  ctx.textAlign = "left";
+}
+
 /* ============================================================================
- * 9. FIXED 60 FPS MAIN LOOP
+ * 10. FIXED 60 FPS MAIN LOOP
  * ========================================================================== */
 let lastTime = performance.now();
 let accumulator = 0;
 
 function updateTick() {
+  if (game.state === "SELECT") {
+    for (const k in justPressed) delete justPressed[k];
+    return;
+  }
+
   if (game.shakeTimer > 0) game.shakeTimer = Math.max(0, game.shakeTimer - DT);
 
   if (game.state === "TRANSITION") {
@@ -1458,6 +1813,7 @@ function updateTick() {
 
   if (game.state !== "PLAY") return;
 
+  game.elapsedTime += DT;
   game.stageTimer = Math.max(0, game.stageTimer - DT);
   if (game.stageTimer <= 0) {
     game.state = "GAMEOVER";
@@ -1465,7 +1821,7 @@ function updateTick() {
   }
 
   const room = game.rooms[game.roomIdx];
-  const input = readInput();
+  const input = getEffectiveInput();
 
   stepHero(input, room);
   stepProjectilesAndPickups(room);
@@ -1476,6 +1832,11 @@ function updateTick() {
 }
 
 function renderFrame() {
+  if (game.state === "SELECT") {
+    drawSelectScreen();
+    return;
+  }
+
   ctx.save();
   if (game.shakeTimer > 0) {
     ctx.translate((Math.random() - 0.5) * 8, (Math.random() - 0.5) * 8);
@@ -1501,6 +1862,7 @@ function renderFrame() {
     drawRoomEntities(room, 0);
     drawHero();
     drawProjectilesAndParticles();
+    drawBlindSightMask();
   }
 
   ctx.restore();
