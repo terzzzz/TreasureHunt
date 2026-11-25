@@ -1,5 +1,3 @@
-// js/config.js
-
 "use strict";
 
 const canvas = document.getElementById("game");
@@ -213,7 +211,7 @@ const STAGE_001_DEFAULT = {
       pageLeft: "26",
       pageRight: "27",
       spawn: { x: 112, y: 492 },
-      exit: { x: 424, y: 364, w: 40, h: 24, hint: "CLIMB UP" },
+      exit: { x: 424, y: 364, w: 40, h: 24, dir: "up" },
       solids: [
         { x: 0,   y: 548, w: 984, h: 73, hatched: true },
         { x: 0,   y: 0,   w: 24,  h: 548 },
@@ -241,7 +239,7 @@ const STAGE_001_DEFAULT = {
       pageLeft: "28",
       pageRight: "29",
       spawn: { x: 64, y: 492 },
-      exit: { x: 944, y: 430, w: 32, h: 118, hint: "EXIT ->" },
+      exit: { x: 944, y: 430, w: 32, h: 118, dir: "right" },
       solids: [
         { x: 0,   y: 548, w: 984, h: 73, hatched: true },
         { x: 0,   y: 0,   w: 24,  h: 548 },
@@ -270,10 +268,11 @@ const STAGE_001_DEFAULT = {
       pageRight: "31",
       isFinal: true,
       spawn: { x: 64, y: 492 },
+      exit: { x: 896, y: 430, w: 54, h: 118, dir: "right", label: "VAULT" },
       solids: [
         { x: 0,   y: 548, w: 984, h: 73, hatched: true },
         { x: 0,   y: 0,   w: 24,  h: 548 },
-        { x: 956, y: 0,   w: 28,  h: 548 },
+        { x: 956, y: 0,   w: 28,  h: 430 },
         { x: 620, y: 400, w: 280, h: 20, hatched: true }
       ],
       oneWay: [
