@@ -1,0 +1,89 @@
+//* traits.json *//
+{
+  "baseHunter": {
+    "walkSpeed": 210,
+    "climbSpeed": 145,
+    "jumpVel": -505,
+    "hp": 100,
+    "bulletSpeed": 660,
+    "bulletDropRatio": 0.75
+  },
+  "traits": {
+    "blind": {
+      "num": "1",
+      "en": "Blind",
+      "zhName": "阿漢",
+      "anchor": "盲",
+      "visual": "smoky_eyes",
+      "stats": {
+        "sightRadius": 155,
+        "bgmVolumeScale": 1.0
+      }
+    },
+    "prosthesis": {
+      "num": "2",
+      "en": "Prosthesis",
+      "zhName": "阿義",
+      "anchor": "義",
+      "visual": "metal_stick_legs",
+      "stats": {
+        "walkSpeedMultiplier": 0.62
+      }
+    },
+    "deaf": {
+      "num": "3",
+      "en": "Deaf",
+      "zhName": "阿隆",
+      "anchor": "聾",
+      "visual": "ear_hearing_device",
+      "stats": {
+        "inputDelaySec": 0.40,
+        "sfxGainMultiplier": 0.30,
+        "bgmVolumeScale": 0.27
+      }
+    },
+    "tremor": {
+      "num": "4",
+      "en": "Tremor",
+      "zhName": "阿振",
+      "anchor": "震",
+      "visual": "angry_head_marks",
+      "stats": {
+        "aimJitterPx": 14,
+        "spreadRad": 0.32,
+        "headShakePx": 1.5
+      }
+    },
+    "asthma": {
+      "num": "5",
+      "en": "Asthma",
+      "zhName": "阿揣",
+      "anchor": "喘",
+      "visual": "breath_puffs",
+      "stats": {
+        "fatigueGainPerSec": 42,
+        "fatigueDecayPerSec": 58,
+        "stunDurationSec": 1.0,
+        "stunOnGroundOnly": true
+      }
+    }
+  },
+  "roster": {
+    "1":     { "enName": "Blind",       "zhName": "阿漢",       "anchors": "盲" },
+    "2":     { "enName": "Prosthesis",  "zhName": "阿義",       "anchors": "義" },
+    "3":     { "enName": "Deaf",        "zhName": "阿隆",       "anchors": "聾" },
+    "4":     { "enName": "Tremor",      "zhName": "阿振",       "anchors": "震" },
+    "5":     { "enName": "Asthma",      "zhName": "阿揣",       "anchors": "喘" },
+    "123":   { "enName": "Blosthef",    "zhName": "濃義漢",     "anchors": "盲義聾" },
+    "124":   { "enName": "Blosthemor",  "zhName": "震義漢",     "anchors": "盲義震" },
+    "125":   { "enName": "Blosthema",   "zhName": "全義漢",     "anchors": "盲義喘" },
+    "134":   { "enName": "Bleamor",     "zhName": "真漢龍",     "anchors": "盲聾震" },
+    "135":   { "enName": "Bleama",      "zhName": "全漢龍",     "anchors": "盲聾喘" },
+    "145":   { "enName": "Blemoma",     "zhName": "全真漢",     "anchors": "盲震喘" },
+    "234":   { "enName": "Proseamor",   "zhName": "罕真龍",     "anchors": "義聾震" },
+    "235":   { "enName": "Proseama",    "zhName": "全義龍",     "anchors": "義聾喘" },
+    "245":   { "enName": "Prosemoma",   "zhName": "義鎮泉",     "anchors": "義震喘" },
+    "345":   { "enName": "Dremoma",     "zhName": "龍鎮泉",     "anchors": "聾震喘" },
+    "12345": { "enName": "Blosthefema", "zhName": "全真濃義漢", "anchors": "盲義聾震喘" }
+  }
+}
