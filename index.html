@@ -167,7 +167,7 @@ const FALLBACK_TRAITS_DATA = {
       zhName: "阿漢",
       anchor: "盲",
       visual: "smoky_eyes",
-      desc: "Sight circle (155px) + smoky eyes",
+      desc: "Sight circle (155px) + blind goggles",
       stats: { sightRadius: 155, bgmVolumeScale: 1.0 }
     },
     prosthesis: {
@@ -176,7 +176,7 @@ const FALLBACK_TRAITS_DATA = {
       zhName: "阿義",
       anchor: "義",
       visual: "metal_stick_legs",
-      desc: "0.62x ground speed + metal stick limbs",
+      desc: "0.62x ground speed + mechanical legs",
       stats: { walkSpeedMultiplier: 0.62 }
     },
     deaf: {
@@ -193,8 +193,8 @@ const FALLBACK_TRAITS_DATA = {
       en: "Tremor",
       zhName: "阿振",
       anchor: "震",
-      visual: "angry_head_marks",
-      desc: "Shaky aim + spread cone + angry marks",
+      visual: "fragile_thin_arms",
+      desc: "Thin fragile arms + shaky aim with heavy rifle",
       stats: { aimJitterPx: 14, spreadRad: 0.32, headShakePx: 1.5 }
     },
     asthma: {
@@ -347,18 +347,56 @@ async function initTraitsJson() {
       }
     }
   } catch (_) {
-    // Keep FALLBACK_TRAITS_DATA when traits.json is absent or opened via file://
+    // Keep FALLBACK_TRAITS_DATA when traits.json is absent
   }
 }
 
 /* ============================================================================
- * 3. CHARACTER SPRITE & STAGE 1 (001) LOADER
- *    Loads:
- *      ./char/hero_base.png
- *      ./Stages/001/stage.json
- *      ./Stages/001/bg/001.png (your Stage 1 Screen 1 photo/sketch)
- *      ./Stages/001/music/bgm.mp3
+ * 3. STACKABLE CHARACTER LAYERS + WHITE-BG KEYING (./char/*.jpg & *.jpeg)
+ *    Expected files in ./char/:
+ *      normal_char.jpg, blind.jpeg, deaf.jpeg, prosthesis.jpeg, tremor.jpeg, asthma.jpeg
  * ========================================================================== */
+function loadKeyedSprite(src, keyWhiteBg = true) {
+  const entry = { img: new Image(), canvas: null, loaded: false };
+  entry.img.onload = () => {
+    try {
+      const w = entry.img.naturalWidth;
+      const h = entry.img.naturalHeight;
+      const off = document.createElement("canvas");
+      off.width = w;
+      off.height = h;
+      const octx = off.getContext("2d");
+      octx.drawImage(entry.img, 0, 0);
+
+      if (keyWhiteBg) {
+        const imgData = octx.getImageData(0, 0, w, h);
+        const d = imgData.data;
+        for (let i = 0; i < d.length; i += 4) {
+          const r = d[i], g = d[i + 1], b = d[i + 2];
+          if (r > 240 && g > 240 && b > 240) {
+            d[i + 3] = 0;
+          } else if (r > 224 && g > 224 && b > 224) {
+            const minC = Math.min(r, g, b);
+            d[i + 3] = Math.max(0, Math.min(255, Math.round((240 - minC) * 15)));
+          }
+        }
+        octx.putImageData(imgData, 0, 0);
+      }
+
+      entry.canvas = off;
+      entry.loaded = true;
+    } catch (_) {
+      entry.canvas = null;
+      entry.loaded = true;
+    }
+  };
+  entry.img.onerror = () => {
+    entry.loaded = false;
+  };
+  entry.img.src = src;
+  return entry;
+}
+
 function loadOptionalImage(src) {
   const img = new Image();
   img.loaded = false;
@@ -368,8 +406,16 @@ function loadOptionalImage(src) {
   return img;
 }
 
-const CHAR_SPRITES = {
-  base:     loadOptionalImage("./char/hero_base.png"),
+const CHAR_LAYERS = {
+  base:       loadKeyedSprite("./char/normal_char.jpg", true),
+  blind:      loadKeyedSprite("./char/blind.jpeg", true),
+  deaf:       loadKeyedSprite("./char/deaf.jpeg", true),
+  prosthesis: loadKeyedSprite("./char/prosthesis.jpeg", true),
+  tremor:     loadKeyedSprite("./char/tremor.jpeg", true),
+  asthma:     loadKeyedSprite("./char/asthma.jpeg", true)
+};
+
+const EXTRA_SPRITES = {
   giant:    loadOptionalImage("./char/giant.png"),
   giantAxe: loadOptionalImage("./char/giant_axe.png"),
   blade:    loadOptionalImage("./char/blade_enemy.png"),
@@ -866,7 +912,7 @@ const game = {
 };
 
 const hero = {
-  x: 112, y: 496, w: 28, h: 52,
+  x: 112, y: 492, w: 34, h: 56,
   vx: 0, vy: 0, facing: 1, aimAngle: 0,
   grounded: false, onLadder: false, dropThroughTimer: 0,
   hp: 100, maxHp: 100, invulnTimer: 0,
@@ -890,7 +936,7 @@ function loadScreenByIndex(idx) {
     pageLeft: tpl.pageLeft || String(26 + idx * 2),
     pageRight: tpl.pageRight || String(27 + idx * 2),
     isFinal: Boolean(tpl.isFinal || idx === screens.length - 1),
-    spawn: { ...(tpl.spawn || { x: 64, y: 496 }) },
+    spawn: { ...(tpl.spawn || { x: 64, y: 492 }) },
     exit: tpl.exit ? { ...tpl.exit } : null,
     solids: (tpl.solids || []).map(s => ({ ...s })),
     oneWay: (tpl.oneWay || []).map(p => ({ ...p })),
@@ -1046,7 +1092,7 @@ function stepHero(input, scr) {
   game.aimWorldY = mouse.screenY + game.camY + jitterY;
 
   const shoulderX = hero.x + hero.w / 2;
-  const shoulderY = hero.y + hero.h * 0.42;
+  const shoulderY = hero.y + hero.h * 0.45;
   hero.aimAngle = Math.atan2(game.aimWorldY - shoulderY, game.aimWorldX - shoulderX);
   hero.facing = Math.cos(hero.aimAngle) >= 0 ? 1 : -1;
 
@@ -1458,7 +1504,7 @@ function stepParticles() {
 }
 
 /* ============================================================================
- * 8. RENDERING: SCREEN 001 PHOTO/SKETCH, LAYERED DISABILITY VISUALS & SELECT
+ * 8. RENDERING: SCREEN 001, STACKABLE MOVABLE CHARACTER & SELECT SCREEN
  * ========================================================================== */
 function drawActiveScreenBackground(scr) {
   const customBg = stageManager.bgImages[scr.id];
@@ -1467,7 +1513,6 @@ function drawActiveScreenBackground(scr) {
     return;
   }
 
-  // Notebook spread fallback matching your Stage 1 Screen 001 sketch
   const grad = ctx.createLinearGradient(0, 0, W, 0);
   grad.addColorStop(0.00, "#ede7d8");
   grad.addColorStop(0.47, "#f7f4eb");
@@ -1578,8 +1623,8 @@ function drawScreenEntities(scr) {
     if (p.collected) continue;
     const bob = Math.sin(game.elapsedTime * 5) * 3;
     if (p.type === "crown") {
-      if (CHAR_SPRITES.crown.loaded) {
-        ctx.drawImage(CHAR_SPRITES.crown, p.x, p.y + bob, p.w, p.h);
+      if (EXTRA_SPRITES.crown.loaded) {
+        ctx.drawImage(EXTRA_SPRITES.crown, p.x, p.y + bob, p.w, p.h);
       } else {
         ctx.strokeStyle = "#dc2626";
         ctx.lineWidth = 2.2;
@@ -1595,8 +1640,8 @@ function drawScreenEntities(scr) {
         ctx.stroke();
       }
     } else if (p.type === "chicken") {
-      if (CHAR_SPRITES.chicken.loaded) {
-        ctx.drawImage(CHAR_SPRITES.chicken, p.x, p.y + bob, p.w, p.h);
+      if (EXTRA_SPRITES.chicken.loaded) {
+        ctx.drawImage(EXTRA_SPRITES.chicken, p.x, p.y + bob, p.w, p.h);
       } else {
         ctx.strokeStyle = "#1e293b";
         ctx.lineWidth = 2;
@@ -1613,8 +1658,8 @@ function drawScreenEntities(scr) {
         ctx.strokeRect(p.x + 24, p.y + 9 + bob, 8, 4);
       }
     } else if (p.type === "hat") {
-      if (CHAR_SPRITES.hat.loaded) {
-        ctx.drawImage(CHAR_SPRITES.hat, p.x, p.y + bob, p.w, p.h);
+      if (EXTRA_SPRITES.hat.loaded) {
+        ctx.drawImage(EXTRA_SPRITES.hat, p.x, p.y + bob, p.w, p.h);
       } else {
         ctx.fillStyle = "#eab308";
         ctx.fillRect(p.x + 4, p.y + 4 + bob, 22, 12);
@@ -1623,8 +1668,8 @@ function drawScreenEntities(scr) {
         ctx.fillRect(p.x + 12, p.y + bob, 6, 6);
       }
     } else if (p.type === "treasure") {
-      if (CHAR_SPRITES.treasure.loaded) {
-        ctx.drawImage(CHAR_SPRITES.treasure, p.x, p.y, p.w, p.h);
+      if (EXTRA_SPRITES.treasure.loaded) {
+        ctx.drawImage(EXTRA_SPRITES.treasure, p.x, p.y, p.w, p.h);
       } else {
         ctx.fillStyle = "#b45309";
         ctx.fillRect(p.x, p.y + 8, p.w, p.h - 8);
@@ -1648,10 +1693,10 @@ function drawBladeEnemy(e) {
   const cx = e.x + e.w / 2;
   const step = Math.sin(e.animTimer * 12) * 5;
   ctx.save();
-  if (CHAR_SPRITES.blade.loaded) {
+  if (EXTRA_SPRITES.blade.loaded) {
     ctx.translate(cx, e.y + e.h);
     ctx.scale(e.facing, 1);
-    ctx.drawImage(CHAR_SPRITES.blade, -e.w / 2, -e.h, e.w, e.h);
+    ctx.drawImage(EXTRA_SPRITES.blade, -e.w / 2, -e.h, e.w, e.h);
     ctx.restore();
     return;
   }
@@ -1698,8 +1743,8 @@ function drawAxeGiant(g) {
   ctx.scale(g.facing, 1);
   ctx.rotate(tilt);
 
-  if (CHAR_SPRITES.giant.loaded) {
-    ctx.drawImage(CHAR_SPRITES.giant, -g.w / 2, -g.h, g.w, g.h);
+  if (EXTRA_SPRITES.giant.loaded) {
+    ctx.drawImage(EXTRA_SPRITES.giant, -g.w / 2, -g.h, g.w, g.h);
   } else {
     ctx.strokeStyle = g.hurtTimer > 0 ? "#dc2626" : "#1e293b";
     ctx.fillStyle = g.hurtTimer > 0 ? "#fecaca" : "#e2e8f0";
@@ -1727,8 +1772,8 @@ function drawAxeGiant(g) {
   ctx.save();
   ctx.translate(18, -62);
   ctx.rotate(g.weaponAngle);
-  if (CHAR_SPRITES.giantAxe.loaded) {
-    ctx.drawImage(CHAR_SPRITES.giantAxe, -6, -g.weaponLength, 26, g.weaponLength);
+  if (EXTRA_SPRITES.giantAxe.loaded) {
+    ctx.drawImage(EXTRA_SPRITES.giantAxe, -6, -g.weaponLength, 26, g.weaponLength);
   } else {
     ctx.strokeStyle = "#1e293b";
     ctx.lineWidth = 3;
@@ -1763,6 +1808,13 @@ function drawAxeGiant(g) {
   ctx.fillRect(g.x + 1, g.y - 11, (g.w - 2) * Math.max(0, g.hp / g.maxHp), 4);
 }
 
+function drawSpriteLayer(layer, dx, dy, dw, dh) {
+  if (!layer || !layer.loaded) return false;
+  const src = layer.canvas || layer.img;
+  ctx.drawImage(src, dx, dy, dw, dh);
+  return true;
+}
+
 function drawHero() {
   if (hero.invulnTimer > 0 && Math.floor(hero.invulnTimer * 20) % 2 === 0) return;
 
@@ -1770,166 +1822,129 @@ function drawHero() {
   const shakeAmp = hero.traits.tremor ? (hero.stats?.headShakePx ?? 1.5) : 0;
   const tremorX = shakeAmp > 0 ? Math.sin(time * 55) * shakeAmp : 0;
   const pantY   = hero.asthmaStun > 0 ? Math.sin(time * 16) * 2.5 : 0;
-  const cx      = hero.x + hero.w / 2 + tremorX;
-  const swing   = hero.animState === "RUN" ? Math.sin(hero.animTimer) * 6 : 0;
+
+  const runBobY = hero.animState === "RUN" ? Math.abs(Math.sin(hero.animTimer)) * -3.5 : 0;
+  const runTilt = hero.animState === "RUN" ? Math.sin(hero.animTimer) * 0.045 + hero.facing * 0.04 : 0;
+  const climbBobX = hero.animState === "CLIMB" ? Math.sin(hero.animTimer) * 2.5 : 0;
+  const jumpSquashY = hero.animState === "JUMP" ? -2.5 : 0;
+
+  const footX = hero.x + hero.w / 2 + tremorX + climbBobX;
+  const footY = hero.y + hero.h + pantY + runBobY + jumpSquashY;
+
+  const spriteW = 54;
+  const spriteH = 66;
 
   ctx.save();
+  ctx.translate(footX, footY);
+  ctx.scale(hero.facing, 1);
+  ctx.rotate(runTilt);
 
-  ctx.save();
-  if (hero.traits.prosthesis) {
-    ctx.beginPath();
-    ctx.rect(hero.x - 10, hero.y - 14, hero.w + 20, hero.h * 0.62 + 14);
-    ctx.clip();
-  }
+  const hasBaseSprite = CHAR_LAYERS.base.loaded;
+  if (hasBaseSprite) {
+    // 1. Base standard adventurer (normal_char.jpg)
+    drawSpriteLayer(CHAR_LAYERS.base, -spriteW / 2, -spriteH, spriteW, spriteH);
 
-  if (CHAR_SPRITES.base.loaded) {
-    ctx.translate(cx, hero.y + hero.h + pantY);
-    ctx.scale(hero.facing, 1);
-    ctx.drawImage(CHAR_SPRITES.base, -hero.w / 2, -hero.h, hero.w, hero.h);
+    // 2. Stack independent trait layers in deterministic order
+    if (hero.traits.prosthesis && CHAR_LAYERS.prosthesis.loaded) {
+      drawSpriteLayer(CHAR_LAYERS.prosthesis, -spriteW / 2, -spriteH, spriteW, spriteH);
+    }
+    if (hero.traits.blind && CHAR_LAYERS.blind.loaded) {
+      drawSpriteLayer(CHAR_LAYERS.blind, -spriteW / 2, -spriteH, spriteW, spriteH);
+    }
+    if (hero.traits.deaf && CHAR_LAYERS.deaf.loaded) {
+      drawSpriteLayer(CHAR_LAYERS.deaf, -spriteW / 2, -spriteH, spriteW, spriteH);
+    }
+    if (hero.traits.asthma && CHAR_LAYERS.asthma.loaded) {
+      drawSpriteLayer(CHAR_LAYERS.asthma, -spriteW / 2, -spriteH, spriteW, spriteH);
+    }
+    if (hero.traits.tremor && CHAR_LAYERS.tremor.loaded) {
+      drawSpriteLayer(CHAR_LAYERS.tremor, -spriteW / 2, -spriteH, spriteW, spriteH);
+    }
   } else {
-    ctx.strokeStyle = "#1e293b";
-    ctx.lineWidth = 2.4;
+    const swing = hero.animState === "RUN" ? Math.sin(hero.animTimer) * 6 : 0;
+    ctx.strokeStyle = hero.traits.prosthesis ? "#94a3b8" : "#1e293b";
+    ctx.lineWidth = hero.traits.tremor ? 1.5 : 2.6;
     ctx.beginPath();
-    ctx.moveTo(cx, hero.y + 32 + pantY);
-    ctx.lineTo(cx - 7 + swing, hero.y + hero.h);
-    ctx.moveTo(cx, hero.y + 32 + pantY);
-    ctx.lineTo(cx + 7 - swing, hero.y + hero.h);
-    ctx.moveTo(cx, hero.y + 15 + pantY);
-    ctx.lineTo(cx, hero.y + 32 + pantY);
+    ctx.moveTo(0, -24);
+    ctx.lineTo(-7 + swing, 0);
+    ctx.moveTo(0, -24);
+    ctx.lineTo(7 - swing, 0);
+    ctx.stroke();
+
+    ctx.strokeStyle = "#1e293b";
+    ctx.beginPath();
+    ctx.moveTo(0, -41);
+    ctx.lineTo(0, -24);
     ctx.stroke();
 
     ctx.fillStyle = "#f7f4eb";
     ctx.beginPath();
-    ctx.arc(cx, hero.y + 8 + pantY, 7.5, 0, Math.PI * 2);
+    ctx.arc(0, -48, 7.5, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
-  }
-  ctx.restore();
 
-  // PROSTHESIS: Metal stick limbs
-  if (hero.traits.prosthesis) {
-    const hipY = hero.y + hero.h * 0.62 + pantY;
-    const footY = hero.y + hero.h;
-    const leftFootX = cx - 6 + swing;
-    const rightFootX = cx + 6 - swing;
-
-    ctx.strokeStyle = "#94a3b8";
-    ctx.lineWidth = 3.2;
-    ctx.beginPath();
-    ctx.moveTo(cx - 3, hipY);
-    ctx.lineTo(leftFootX, footY - 3);
-    ctx.moveTo(cx + 3, hipY);
-    ctx.lineTo(rightFootX, footY - 3);
-    ctx.stroke();
-
-    ctx.fillStyle = "#1e293b";
-    ctx.fillRect(cx - 5, hipY + 5, 4, 4);
-    ctx.fillRect(cx + 1, hipY + 5, 4, 4);
-    ctx.fillRect(leftFootX - 3, footY - 3, 7, 3);
-    ctx.fillRect(rightFootX - 3, footY - 3, 7, 3);
-  }
-
-  // BLIND: Smoky eyes
-  if (hero.traits.blind) {
-    const eyeX = cx + hero.facing * 3;
-    const eyeY = hero.y + 10 + pantY;
-    for (let i = 0; i < 4; i++) {
-      const phase = (time * 2.4 + i * 0.25) % 1;
-      const driftX = Math.sin(time * 5 + i * 2) * 3 - hero.facing * phase * 6;
-      const driftY = -phase * 14;
-      ctx.fillStyle = `rgba(15, 23, 42, ${(1 - phase) * 0.85})`;
-      ctx.beginPath();
-      ctx.arc(eyeX + driftX, eyeY + driftY, 3.2 - phase * 1.4, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
-
-  // DEAF: Ear hearing device
-  if (hero.traits.deaf) {
-    const earX = cx - hero.facing * 5;
-    const earY = hero.y + 11 + pantY;
-    ctx.fillStyle = "#38bdf8";
-    ctx.beginPath();
-    ctx.arc(earX, earY, 3.2, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = "#0284c7";
-    ctx.lineWidth = 1.3;
-    ctx.stroke();
-  }
-
-  // TREMOR: Angry symbols around head
-  if (hero.traits.tremor) {
-    const pulse = 1 + Math.sin(time * 18) * 0.2;
-    const markX = cx - hero.facing * 12;
-    const markY = hero.y - 3 + pantY;
-    ctx.save();
-    ctx.translate(markX, markY);
-    ctx.scale(pulse, pulse);
-    ctx.strokeStyle = "#dc2626";
-    ctx.lineWidth = 1.8;
-    ctx.beginPath();
-    ctx.moveTo(-4, -1); ctx.lineTo(-1, -1); ctx.lineTo(-1, -4);
-    ctx.moveTo(4, -1);  ctx.lineTo(1, -1);  ctx.lineTo(1, -4);
-    ctx.moveTo(-4, 1);  ctx.lineTo(-1, 1);  ctx.lineTo(-1, 4);
-    ctx.moveTo(4, 1);   ctx.lineTo(1, 1);   ctx.lineTo(1, 4);
-    ctx.stroke();
-    ctx.restore();
-  }
-
-  // ASTHMA: Breath puffs & fatigue bar
-  if (hero.traits.asthma) {
-    if (hero.asthma > 35 || hero.asthmaStun > 0) {
-      const mouthX = cx + hero.facing * 7;
-      const mouthY = hero.y + 15 + pantY;
-      const puffPhase = (time * (hero.asthmaStun > 0 ? 4 : 1.8)) % 1;
-      ctx.fillStyle = `rgba(255, 255, 255, ${(1 - puffPhase) * 0.85})`;
-      ctx.strokeStyle = `rgba(100, 116, 139, ${(1 - puffPhase) * 0.65})`;
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.arc(
-        mouthX + hero.facing * puffPhase * 16,
-        mouthY - puffPhase * 6,
-        2.5 + puffPhase * 4.5,
-        0,
-        Math.PI * 2
-      );
-      ctx.fill();
-      ctx.stroke();
-    }
-
-    if (hero.asthma > 2 || hero.asthmaStun > 0) {
-      const barW = 36;
+    if (hero.traits.blind) {
       ctx.fillStyle = "#0f172a";
-      ctx.fillRect(cx - barW / 2, hero.y - 16, barW, 5);
-      ctx.fillStyle = hero.asthmaStun > 0 ? "#ef4444" : (hero.asthmaPending ? "#f59e0b" : "#38bdf8");
-      ctx.fillRect(cx - barW / 2 + 1, hero.y - 15, (barW - 2) * (hero.asthma / 100), 3);
-
-      if (hero.asthmaStun > 0) {
-        ctx.fillStyle = "#dc2626";
-        ctx.font = "bold 11px monospace";
-        ctx.textAlign = "center";
-        ctx.fillText("GASP!", cx, hero.y - 22);
-        ctx.textAlign = "left";
-      }
+      ctx.fillRect(-1, -50, 8, 4);
     }
+    if (hero.traits.deaf) {
+      ctx.fillStyle = "#38bdf8";
+      ctx.beginPath();
+      ctx.arc(-5, -47, 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // Tremor: fragile thin-arm strain lines & slight gun-arm quiver (no anger marks)
+  if (hero.traits.tremor) {
+    const quiver = Math.sin(time * 48) * 1.4;
+    ctx.strokeStyle = "rgba(100, 116, 139, 0.85)";
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(4, -27 + quiver);
+    ctx.lineTo(13, -29 - quiver);
+    ctx.moveTo(6, -24 - quiver);
+    ctx.lineTo(14, -26 + quiver);
+    ctx.stroke();
+  }
+
+  if (hero.traits.asthma && (hero.asthma > 35 || hero.asthmaStun > 0)) {
+    const puffPhase = (time * (hero.asthmaStun > 0 ? 4 : 1.8)) % 1;
+    ctx.fillStyle = `rgba(255, 255, 255, ${(1 - puffPhase) * 0.85})`;
+    ctx.strokeStyle = `rgba(100, 116, 139, ${(1 - puffPhase) * 0.65})`;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(10 + puffPhase * 16, -45 - puffPhase * 6, 2.5 + puffPhase * 4.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
   }
 
   if (hero.hasMissileHat) {
     const ready = hero.hatCooldown <= 0;
     ctx.fillStyle = ready ? "#facc15" : "#854d0e";
-    ctx.fillRect(cx - 10, hero.y - 2 + pantY, 20, 4);
-    ctx.fillRect(cx - 6, hero.y - 8 + pantY, 12, 6);
+    ctx.fillRect(-10, -56, 20, 4);
+    ctx.fillRect(-6, -62, 12, 6);
   }
 
-  ctx.save();
-  ctx.translate(cx, hero.y + hero.h * 0.42 + pantY);
-  ctx.rotate(hero.aimAngle);
-  ctx.fillStyle = "#1e3a8a";
-  ctx.fillRect(2, -3, 18, 5);
-  ctx.fillRect(6, 2, 4, 5);
   ctx.restore();
 
-  ctx.restore();
+  if (hero.traits.asthma && (hero.asthma > 2 || hero.asthmaStun > 0)) {
+    const barW = 36;
+    const barX = footX - barW / 2;
+    const barY = footY - spriteH - 10;
+    ctx.fillStyle = "#0f172a";
+    ctx.fillRect(barX, barY, barW, 5);
+    ctx.fillStyle = hero.asthmaStun > 0 ? "#ef4444" : (hero.asthmaPending ? "#f59e0b" : "#38bdf8");
+    ctx.fillRect(barX + 1, barY + 1, (barW - 2) * (hero.asthma / 100), 3);
+
+    if (hero.asthmaStun > 0) {
+      ctx.fillStyle = "#dc2626";
+      ctx.font = "bold 11px monospace";
+      ctx.textAlign = "center";
+      ctx.fillText("GASP!", footX, barY - 4);
+      ctx.textAlign = "left";
+    }
+  }
 }
 
 function drawProjectilesAndAimMark() {
@@ -1944,8 +1959,8 @@ function drawProjectilesAndAimMark() {
     ctx.save();
     ctx.translate(bone.x, bone.y);
     ctx.rotate(bone.rot);
-    if (CHAR_SPRITES.bone.loaded) {
-      ctx.drawImage(CHAR_SPRITES.bone, -10, -5, 20, 10);
+    if (EXTRA_SPRITES.bone.loaded) {
+      ctx.drawImage(EXTRA_SPRITES.bone, -10, -5, 20, 10);
     } else {
       ctx.fillStyle = "#fffbeb";
       ctx.strokeStyle = "#78350f";
@@ -2073,7 +2088,7 @@ function drawHUD() {
     ctx.setLineDash([6, 6]);
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.arc(hero.x + hero.w / 2, hero.y + hero.h * 0.42, HALF_W * hero.stats.bulletDropRatio, 0, Math.PI * 2);
+    ctx.arc(hero.x + hero.w / 2, hero.y + hero.h * 0.45, HALF_W * hero.stats.bulletDropRatio, 0, Math.PI * 2);
     ctx.stroke();
     ctx.setLineDash([]);
 
