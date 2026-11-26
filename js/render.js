@@ -859,9 +859,11 @@ function drawHUD() {
     ctx.fillRect(10, H - 34, W - 20, 26);
     ctx.fillStyle = "#4ade80";
     ctx.font = "12px monospace";
+   // js/render.js (drawHUD status bar line) //
     const seedLabel = game.runSeed != null ? `SEED:${game.runSeed} | ` : "";
-    const statusText = debugDrag.lastJson || `${seedLabel}DRAG BOX -> [B]Solid [L]Ladder [O]OneWay [Z]Undo`;
+    const statusText = debugDrag.lastJson || `${seedLabel}DRAG BOX -> [B]Solid [L]Ladder [O]OneWay [Z]Undo [X]Erase`;
     ctx.fillText(statusText, 18, H - 16);
+    
   }
 
   if (game.state === "GAMEOVER" || game.state === "VICTORY") {
