@@ -1,56 +1,14 @@
+// js/main.js //
 "use strict";
 
-function loadScreenByIndex(idx) {
-  const screens = stageManager.data.screens;
-  const tpl = screens[idx];
-  const scrKey = tpl.id || tpl.file || String(idx);
-  game.screenIdx = idx;
-  debugDrag.draftBox = null;
-  debugDrag.undoStack.length = 0;
+function loadScreenObject(scr) {
+  game.activeScreen = scr;
+  game.roomType = scr.roomType || "START";
+  game.worldW = scr.worldW || W;
+  game.worldH = scr.worldH || H;
 
-  game.activeScreen = {
-    id: scrKey,
-    image: tpl.image || tpl.file || null,
-    pageLeft: tpl.pageLeft || String(26 + idx * 2),
-    pageRight: tpl.pageRight || String(27 + idx * 2),
-    isFinal: Boolean(tpl.isFinal || idx === screens.length - 1),
-    spawn: { ...(tpl.spawn || { x: 80, y: 492 }) },
-    exit: tpl.exit ? { ...tpl.exit } : null,
-    solids: (tpl.solids || [
-      { x: 0, y: 548, w: 984, h: 73, hatched: true },
-      { x: 0, y: 0, w: 24, h: 548 },
-      { x: 960, y: 0, w: 24, h: 548 }
-    ]).map(s => ({ ...s })),
-    oneWay: (tpl.oneWay || []).map(p => ({ ...p })),
-    ladders: (tpl.ladders || []).map(l => ({ ...l })),
-    pickups: (tpl.pickups || []).map(p => ({ w: 28, h: 24, ...p, collected: false })),
-    enemies: (tpl.enemies || []).map(e => {
-      if (e.kind === "giant") {
-        return {
-          kind: "giant",
-          x: e.x, y: e.y, w: e.w || 62, h: e.h || 100,
-          vx: e.vx || -55, minX: e.minX, maxX: e.maxX, facing: -1,
-          hp: e.hp || 150, maxHp: e.hp || 150,
-          animTimer: 0, hurtTimer: 0, alive: true,
-          aiState: "WALK", aiTimer: 0, weaponAngle: -0.35, weaponLength: 76, struckThisSwing: false
-        };
-      }
-      return {
-        kind: "blade",
-        x: e.x, y: e.y, w: e.w || 30, h: e.h || 52,
-        vx: e.vx || -80, minX: e.minX, maxX: e.maxX, facing: -1,
-        hp: e.hp || 40, maxHp: e.hp || 40,
-        animTimer: 0, hurtTimer: 0, alive: true, slashTimer: 0
-      };
-    })
-  };
-
-  const bgImg = stageManager.bgImages[scrKey];
-  game.worldW = (bgImg && bgImg.loaded && bgImg.naturalWidth > W) ? bgImg.naturalWidth : (tpl.width || W);
-  game.worldH = (bgImg && bgImg.loaded && bgImg.naturalHeight > H) ? bgImg.naturalHeight : (tpl.height || H);
-
-  hero.x = game.activeScreen.spawn.x;
-  hero.y = game.activeScreen.spawn.y;
+  hero.x = scr.spawn?.x ?? 64;
+  hero.y = scr.spawn?.y ?? (H - 34 - hero.h);
   hero.vx = 0;
   hero.vy = 0;
   hero.onLadder = false;
@@ -61,105 +19,92 @@ function loadScreenByIndex(idx) {
   game.missiles.length = 0;
   game.particles.length = 0;
 
-  game.camX = Math.max(0, Math.min(game.worldW - W, hero.x + hero.w / 2 - W / 2));
-  game.camY = Math.max(0, Math.min(game.worldH - H, hero.y + hero.h / 2 - H / 2));
+  const zoom = getActiveCamZoom();
+  const viewW = W / zoom;
+  const viewH = H / zoom;
+  game.camX = Math.max(0, Math.min(game.worldW - viewW, hero.x + hero.w / 2 - viewW / 2));
+  game.camY = Math.max(0, Math.min(game.worldH - viewH, hero.y + hero.h / 2 - viewH / 2));
 }
 
-function advanceToNextScreen() {
-  const nextIdx = game.screenIdx + 1;
-  if (nextIdx >= stageManager.data.screens.length) {
-    const diffBonus = setup.difficulty === "ULTIMATE" ? 6000 : (setup.difficulty === "HARD" ? 3000 : 1000);
-    game.score += 2000 + diffBonus + Math.floor(game.stageTimer) * 5;
-    game.state = "VICTORY_WALK";
-    game.victoryWalkTimer = 1.65;
-    hero.facing = 1;
-    hero.onLadder = false;
-    hero.asthmaStun = 0;
-    hero.animState = "RUN";
-    SFX.syncBgm();
-    SFX.playVictoryFanfare();
-    return;
-  }
-  game.state = "SCREEN_FADE";
-  game.fadeTimer = 0.28;
-  SFX.beep(580, 0.16, "triangle", 0.09, 880);
-  loadScreenByIndex(nextIdx);
-}
+function buildStartingScreen() {
+  const tpl = (stageManager.data.screens && stageManager.data.screens[0]) || STAGE_001_DEFAULT.screens[0];
+  const scrKey = tpl.id || tpl.file || "start.jpg";
+  const atkMult = getCompoundAttackMultiplier(0);
 
-// js/main.js (debugDrag undo & erase helpers) //
-// Ensure debugDrag includes a history array:
-// const debugDrag = { active: false, startX: 0, startY: 0, curX: 0, curY: 0, draftBox: null, lastJson: "", history: [] };
-
-function commitDebugBox(kind) {
-  const scr = game.activeScreen;
-  const db = debugDrag.draftBox;
-  if (!scr || !db) return;
-
-  if (!Array.isArray(debugDrag.history)) debugDrag.history = [];
-
-  if (kind === "solid") {
-    const item = { x: db.x, y: db.y, w: db.w, h: db.h, hatched: true };
-    scr.solids.push(item);
-    debugDrag.history.push({ list: scr.solids, item, label: "Solid" });
-    debugDrag.lastJson = `ADDED SOLID: ${JSON.stringify(item)}`;
-  } else if (kind === "ladder") {
-    const item = { x: db.x, y: db.y, w: db.w, h: db.h };
-    scr.ladders.push(item);
-    debugDrag.history.push({ list: scr.ladders, item, label: "Ladder" });
-    debugDrag.lastJson = `ADDED LADDER: ${JSON.stringify(item)}`;
-  } else if (kind === "oneWay") {
-    const item = { x: db.x, y: db.y, w: db.w };
-    scr.oneWay.push(item);
-    debugDrag.history.push({ list: scr.oneWay, item, label: "OneWay" });
-    debugDrag.lastJson = `ADDED ONEWAY: ${JSON.stringify(item)}`;
-  }
-  debugDrag.draftBox = null;
-}
-
-function undoLastDebugBox() {
-  if (!Array.isArray(debugDrag.history) || debugDrag.history.length === 0) {
-    debugDrag.draftBox = null;
-    debugDrag.lastJson = "NOTHING TO UNDO";
-    return;
-  }
-  const last = debugDrag.history.pop();
-  const idx = last.list.indexOf(last.item);
-  if (idx !== -1) last.list.splice(idx, 1);
-  debugDrag.lastJson = `UNDID ${last.label.toUpperCase()} (${debugDrag.history.length} left)`;
-}
-
-function eraseDebugBoxAtCursor() {
-  // 1. If an uncommitted dashed draft box is active, discard it first
-  if (debugDrag.draftBox) {
-    debugDrag.draftBox = null;
-    debugDrag.lastJson = "CLEARED DRAFT BOX";
-    return;
-  }
-
-  // 2. Otherwise delete the topmost Solid, Ladder, or OneWay under the mouse cursor
-  const scr = game.activeScreen;
-  if (!scr) return;
-  const wx = game.aimWorldX;
-  const wy = game.aimWorldY;
-
-  const collections = [
-    { list: scr.oneWay, label: "OneWay", defaultH: 10 },
-    { list: scr.ladders, label: "Ladder", defaultH: 32 },
-    { list: scr.solids, label: "Solid", defaultH: 16 }
-  ];
-
-  for (const col of collections) {
-    for (let i = col.list.length - 1; i >= 0; i--) {
-      const box = col.list[i];
-      const bh = box.h ?? col.defaultH;
-      if (wx >= box.x && wx <= box.x + box.w && wy >= box.y && wy <= box.y + bh) {
-        col.list.splice(i, 1);
-        debugDrag.lastJson = `ERASED ${col.label.toUpperCase()}: ${JSON.stringify(box)}`;
-        return;
+  return {
+    id: scrKey,
+    roomType: "START",
+    worldW: tpl.width || W,
+    worldH: tpl.height || H,
+    pageLeft: tpl.pageLeft || "1",
+    pageRight: tpl.pageRight || "2",
+    isFinal: false,
+    spawn: { ...(tpl.spawn || { x: 80, y: 492 }) },
+    exit: tpl.exit ? { ...tpl.exit } : { x: W - 64, y: 480, w: 36, h: 68, dir: "right" },
+    solids: (tpl.solids || [
+      { x: 0, y: 548, w: W, h: 34, hatched: true },
+      { x: 0, y: 0, w: 24, h: H },
+      { x: W - 24, y: 0, w: 24, h: H }
+    ]).map(s => ({ ...s })),
+    oneWay: (tpl.oneWay || []).map(p => ({ ...p })),
+    ladders: (tpl.ladders || []).map(l => ({ ...l })),
+    pickups: (tpl.pickups || []).map(p => ({ w: 28, h: 26, ...p, collected: false })),
+    enemies: (tpl.enemies || []).map(e => {
+      if (typeof createEnemyInstance === "function") {
+        const floorY = (e.y || 452) + (e.h || (e.kind === "giant" ? 96 : 46));
+        return createEnemyInstance(e.kind || "blade", e.x + (e.w || 30) * 0.5, floorY, e.minX ?? 80, e.maxX ?? (W - 80), 0);
       }
-    }
-  }
-  debugDrag.lastJson = "NO BOX UNDER CURSOR";
+      return {
+        kind: e.kind || "blade",
+        x: e.x, y: e.y, w: e.w || 30, h: e.h || 46,
+        vx: e.vx || -80, minX: e.minX ?? 80, maxX: e.maxX ?? (W - 80), facing: -1,
+        hp: e.hp || 35, maxHp: e.hp || 35,
+        atk: Math.round(16 * atkMult),
+        scoreValue: e.kind === "giant" ? 800 : 250,
+        animTimer: 0, hurtTimer: 0, alive: true, slashTimer: 0
+      };
+    })
+  };
+}
+
+function startNewRun() {
+  game.runSeed = (Date.now() ^ Math.floor(Math.random() * 0xFFFFFFFF)) >>> 0;
+  game.transitions = 0;
+  game.screenIdx = 0;
+  game.score = 0;
+  game.stageTimer = stageManager.data.timeLimit || 600;
+  game.elapsedTime = 0;
+  game.shakeTimer = 0;
+  game.fadeTimer = 0;
+  game.victoryWalkTimer = 0;
+  game.bossArmed = false;
+  game.bossDefeated = false;
+
+  inputDelayBuffer.length = 0;
+  prevEffectiveInput = {
+    left: false, right: false, up: false, down: false,
+    jumpHeld: false, gunHeld: false, boneHeld: false, hatHeld: false
+  };
+
+  Object.assign(hero, {
+    hp: hero.maxHp,
+    invulnTimer: 0,
+    gunCooldown: 0,
+    gunBurstRemaining: 0,
+    gunReloadTimer: 0,
+    bones: 0,
+    hasMissileHat: false,
+    hatCooldown: 0,
+    asthma: 0,
+    asthmaStun: 0,
+    asthmaPending: false,
+    animState: "IDLE",
+    animTimer: 0
+  });
+
+  loadScreenObject(buildStartingScreen());
+  game.state = "PLAY";
+  SFX.syncBgm();
 }
 
 function startStageWithSelectedTraits() {
@@ -170,41 +115,65 @@ function startStageWithSelectedTraits() {
   hero.traits = computed.active;
   hero.stats = computed;
   hero.identity = buildHunterIdentity(chosen);
+  hero.maxHp = computed.maxHp;
 
-  game.state = "PLAY";
-  game.elapsedTime = 0;
-  game.stageTimer = stageManager.data.timeLimit || 600;
-  game.score = 0;
-  game.victoryWalkTimer = 0;
-  inputDelayBuffer.length = 0;
-  prevEffectiveInput = {
-    left: false, right: false, up: false, down: false,
-    jumpHeld: false, gunHeld: false, boneHeld: false, hatHeld: false
-  };
+  startNewRun();
+}
 
-  Object.assign(hero, {
-    hp: computed.maxHp, maxHp: computed.maxHp,
-    invulnTimer: 0,
-    gunCooldown: 0, gunBurstRemaining: 0, gunReloadTimer: 0,
-    bones: 0,
-    hasMissileHat: false, hatCooldown: 0,
-    asthma: 0, asthmaStun: 0, asthmaPending: false,
-    animState: "IDLE", animTimer: 0
-  });
+function advanceToNextScreen() {
+  // 1. Exiting Treasure Room completes the game ("CONGRATZ!")
+  if (game.roomType === "TREASURE") {
+    const diffBonus = setup.difficulty === "ULTIMATE" ? 6000 : (setup.difficulty === "HARD" ? 3000 : 1000);
+    game.score += diffBonus;
+    game.state = "VICTORY_WALK";
+    game.victoryWalkTimer = 1.4;
+    hero.facing = 1;
+    hero.onLadder = false;
+    hero.asthmaStun = 0;
+    hero.animState = "RUN";
+    SFX.syncBgm();
+    SFX.playVictoryFanfare();
+    return;
+  }
 
-  loadScreenByIndex(0);
-  SFX.syncBgm();
+  // 2. Exiting Boss Chamber after defeating the Boss leads to the Treasure Room
+  if (game.roomType === "BOSS" && game.bossDefeated) {
+    game.state = "SCREEN_FADE";
+    game.fadeTimer = 0.28;
+    SFX.beep(587, 0.2, "triangle", 0.1, 880);
+    loadScreenObject(generateTreasureScreen(game.transitions));
+    return;
+  }
+
+  // 3. Increment transition count (+2% compound monster attack per transition)
+  game.transitions++;
+  game.screenIdx = game.transitions;
+  game.state = "SCREEN_FADE";
+  game.fadeTimer = 0.24;
+  SFX.beep(520, 0.14, "triangle", 0.08, 780);
+
+  // 4. Enter Boss Arena if player armed the Boss button after >= 10 transitions; otherwise next infinite room
+  if (game.transitions >= 10 && game.bossArmed) {
+    game.bossArmed = false;
+    game.bossDefeated = false;
+    loadScreenObject(generateBossScreen(game.transitions));
+  } else {
+    loadScreenObject(generateProceduralScreen(game.runSeed, game.transitions));
+  }
 }
 
 function returnToCharSelect() {
   game.state = "SELECT";
   game.screenIdx = 0;
+  game.transitions = 0;
+  game.roomType = "START";
   game.score = 0;
-  game.stageTimer = stageManager.data.timeLimit || 600;
   game.elapsedTime = 0;
   game.shakeTimer = 0;
   game.fadeTimer = 0;
   game.victoryWalkTimer = 0;
+  game.bossArmed = false;
+  game.bossDefeated = false;
 
   game.bullets.length = 0;
   game.bones.length = 0;
@@ -218,6 +187,37 @@ function returnToCharSelect() {
   for (const k in keys) keys[k] = false;
 
   SFX.syncBgm();
+}
+
+// Desktop HUD button clicks ([B] Boss toggle, [ESC] Char, [M] BGM, End-screen buttons)
+canvas.addEventListener("mousedown", (e) => {
+  if (e.button !== 0 || game.state === "SELECT") return;
+  const rect = canvas.getBoundingClientRect();
+  const cx = ((e.clientX - rect.left) / rect.width) * W;
+  const cy = ((e.clientY - rect.top) / rect.height) * H;
+
+  for (const btn of game.hudButtons) {
+    if (cx >= btn.x && cx <= btn.x + btn.w && cy >= btn.y && cy <= btn.y + btn.h) {
+      btn.onClick();
+      mouse.leftDown = false;
+      e.stopImmediatePropagation();
+      return;
+    }
+  }
+}, true);
+
+// Keyboard shortcuts for Boss toggle ([B]) and Quick Retry ([R])
+window.addEventListener("keydown", (e) => {
+  if (e.code === "KeyB" && game.state === "PLAY" && game.roomType === "RANDOM" && game.transitions >= 10) {
+    game.bossArmed = !game.bossArmed;
+    SFX.beep(game.bossArmed ? 560 : 320, 0.12, "square", 0.08);
+  } else if (e.code === "KeyR" && (game.state === "GAMEOVER" || game.state === "VICTORY")) {
+    startNewRun();
+  }
+});
+
+if (typeof initTouchListeners === "function") {
+  initTouchListeners();
 }
 
 let lastTime = performance.now();
@@ -251,14 +251,12 @@ function updateTick() {
   if (game.state !== "PLAY" || !game.activeScreen) return;
 
   game.elapsedTime += DT;
-  game.stageTimer = Math.max(0, game.stageTimer - DT);
-  if (game.stageTimer <= 0) {
-    game.state = "GAMEOVER";
-    SFX.syncBgm();
-    return;
-  }
 
   const input = getEffectiveInput();
+  if (typeof syncTouchControlsToInput === "function") {
+    syncTouchControlsToInput(input);
+  }
+
   stepHero(input, game.activeScreen);
   stepProjectilesAndPickups(game.activeScreen);
   stepEnemies(game.activeScreen);
@@ -275,12 +273,15 @@ function renderFrame() {
   const scr = game.activeScreen;
   if (!scr) return;
 
+  const zoom = getActiveCamZoom();
+
   ctx.save();
   if (game.shakeTimer > 0) {
     ctx.translate((Math.random() - 0.5) * 8, (Math.random() - 0.5) * 8);
   }
 
   ctx.save();
+  ctx.scale(zoom, zoom);
   ctx.translate(-Math.round(game.camX), -Math.round(game.camY));
 
   drawActiveScreenBackground(scr);
@@ -293,11 +294,14 @@ function renderFrame() {
   ctx.restore();
 
   if (game.state === "SCREEN_FADE") {
-    ctx.fillStyle = `rgba(15, 23, 42, ${Math.min(1, game.fadeTimer / 0.28)})`;
+    ctx.fillStyle = `rgba(15, 23, 42, ${Math.min(1, game.fadeTimer / 0.24)})`;
     ctx.fillRect(0, 0, W, H);
   }
 
   drawHUD();
+  if (typeof drawTouchControls === "function") {
+    drawTouchControls();
+  }
 }
 
 function loop(now) {
