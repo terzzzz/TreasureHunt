@@ -259,7 +259,10 @@ function drawScreenEntities(scr) {
       }
     } else if (p.type === "hat") {
       if (EXTRA_SPRITES.hat.loaded) {
-        ctx.drawImage(EXTRA_SPRITES.hat, p.x, p.y + bob, p.w, p.h);
+        const src = EXTRA_SPRITES.hat.canvas || EXTRA_SPRITES.hat.img;
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(src, p.x, p.y + bob, p.w, p.h);
+        ctx.imageSmoothingEnabled = true;
       } else {
         ctx.fillStyle = "#eab308";
         ctx.fillRect(p.x + 4, p.y + 4 + bob, 22, 12);
@@ -267,6 +270,11 @@ function drawScreenEntities(scr) {
         ctx.fillStyle = "#dc2626";
         ctx.fillRect(p.x + 12, p.y + bob, 6, 6);
       }
+      ctx.fillStyle = "#1e293b";
+      ctx.font = "bold 9px monospace";
+      ctx.textAlign = "center";
+      ctx.fillText("頂帽大炮", p.x + p.w * 0.5, p.y - 3 + bob);
+      ctx.textAlign = "left";
     } else if (p.type === "treasure") {
       if (EXTRA_SPRITES.treasure.loaded) {
         ctx.drawImage(EXTRA_SPRITES.treasure, p.x, p.y, p.w, p.h);
@@ -284,9 +292,49 @@ function drawScreenEntities(scr) {
 
   for (const e of scr.enemies) {
     if (!e.alive) continue;
-    if (e.kind === "blade") drawBladeEnemy(e);
+    if (e.kind === "alien") drawAlienEnemy(e);
+    else if (e.kind === "blade") drawBladeEnemy(e);
     else if (e.kind === "giant") drawAxeGiant(e);
   }
+}
+
+function drawAlienEnemy(e) {
+  ctx.save();
+  ctx.translate(e.x + e.w / 2, e.y + e.h);
+  // Source image faces left (-1), so scale(-e.facing, 1) turns it to always face the player
+  ctx.scale(-e.facing, 1);
+
+  if (EXTRA_SPRITES.alien.loaded) {
+    const src = EXTRA_SPRITES.alien.canvas || EXTRA_SPRITES.alien.img;
+    const drawW = e.w * 1.45;
+    const drawH = e.h;
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(src, -drawW * 0.5, -drawH, drawW, drawH);
+    ctx.imageSmoothingEnabled = true;
+
+    if (e.hurtTimer > 0) {
+      ctx.fillStyle = "rgba(56, 189, 248, 0.38)";
+      ctx.fillRect(-e.w * 0.5, -drawH, e.w, drawH);
+    }
+  } else {
+    ctx.fillStyle = "#22c55e";
+    ctx.fillRect(-12, -52, 24, 52);
+    ctx.fillStyle = "#475569";
+    ctx.fillRect(-20, -74, 40, 22);
+  }
+  ctx.restore();
+
+  // HP Bar & Label
+  ctx.fillStyle = "#1e293b";
+  ctx.fillRect(e.x, e.y - 10, e.w, 4);
+  ctx.fillStyle = "#38bdf8";
+  ctx.fillRect(e.x, e.y - 10, e.w * Math.max(0, e.hp / e.maxHp), 4);
+
+  ctx.fillStyle = "#0f172a";
+  ctx.font = "bold 9px monospace";
+  ctx.textAlign = "center";
+  ctx.fillText("頂帽大炮", e.x + e.w / 2, e.y - 14);
+  ctx.textAlign = "left";
 }
 
 function drawBladeEnemy(e) {
@@ -358,7 +406,6 @@ function drawAxeGiant(g) {
 
   if (EXTRA_SPRITES.giant.loaded) {
     const src = EXTRA_SPRITES.giant.canvas || EXTRA_SPRITES.giant.img;
-    // Draw cropped pixel-art axeman slightly wider than hitbox so the extended axe aligns with weaponLength
     const drawW = g.w * 1.48;
     const drawH = g.h;
     ctx.imageSmoothingEnabled = false;
@@ -513,6 +560,26 @@ function drawAimingGunArm(localAimAngle, hasGunRecoil, isTremor) {
   ctx.restore();
 }
 
+function drawEquippedCannonHat(topHeadY) {
+  ctx.save();
+  // Source hat image faces left (-1), flip horizontally so barrel points forward with hero
+  ctx.scale(-1, 1);
+  if (EXTRA_SPRITES.hat.loaded) {
+    const src = EXTRA_SPRITES.hat.canvas || EXTRA_SPRITES.hat.img;
+    const hatW = 36;
+    const hatH = 26;
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(src, -hatW * 0.56, topHeadY - hatH + 5, hatW, hatH);
+    ctx.imageSmoothingEnabled = true;
+  } else {
+    const ready = hero.hatCooldown <= 0;
+    ctx.fillStyle = ready ? "#facc15" : "#854d0e";
+    ctx.fillRect(-10, topHeadY - 4, 20, 4);
+    ctx.fillRect(-6, topHeadY - 10, 12, 6);
+  }
+  ctx.restore();
+}
+
 function drawLayeredCharacter(footX, footY, scaleFactor, activeTraits, timeSec, opts = {}) {
   const spriteW = 54;
   const spriteH = 66;
@@ -565,10 +632,7 @@ function drawLayeredCharacter(footX, footY, scaleFactor, activeTraits, timeSec, 
       }
     }
     if (opts.hasMissileHat) {
-      const ready = hero.hatCooldown <= 0;
-      ctx.fillStyle = ready ? "#facc15" : "#854d0e";
-      ctx.fillRect(-10, -56, 20, 4);
-      ctx.fillRect(-6, -62, 12, 6);
+      drawEquippedCannonHat(-56);
     }
     ctx.restore();
   } else {
@@ -613,10 +677,7 @@ function drawLayeredCharacter(footX, footY, scaleFactor, activeTraits, timeSec, 
       ctx.fill();
     }
     if (opts.hasMissileHat) {
-      const ready = hero.hatCooldown <= 0;
-      ctx.fillStyle = ready ? "#facc15" : "#854d0e";
-      ctx.fillRect(-10, -56, 20, 4);
-      ctx.fillRect(-6, -62, 12, 6);
+      drawEquippedCannonHat(-54);
     }
     ctx.restore();
   }
