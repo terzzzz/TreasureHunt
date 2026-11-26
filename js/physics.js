@@ -788,7 +788,7 @@ function damageEnemy(enemy, dmg, hitX, hitY) {
   enemy.hp -= dmg;
   enemy.hurtTimer = 0.14;
   spawnParticles(hitX, hitY, "#dc2626", 6, 120);
-SFX.beep(190, 0.07, "square", 0.07, 110);
+  SFX.beep(190, 0.07, "square", 0.07, 110);
 
   if (enemy.hp > 0) {
     if (enemy.kind === "giant") {
@@ -933,7 +933,7 @@ function stepEnemies(scr) {
         h: e.h - 12
       };
 
-if (sameFloor && (rectsOverlap(hero, slashBox) || rectsOverlap(hero, e))) {
+      if (sameFloor && (rectsOverlap(hero, slashBox) || rectsOverlap(hero, e))) {
         e.facing = dx < 0 ? -1 : 1;
         if (e.slashCooldown <= 0) {
           e.slashTimer = 0.24;
@@ -946,7 +946,6 @@ if (sameFloor && (rectsOverlap(hero, slashBox) || rectsOverlap(hero, e))) {
     }
 
     if (e.kind === "knifer") {
-      if (e.hurtTimer > 0) e.hurtTimer = Math.max(0, e.hurtTimer - DT);
       if (e.aggroTimer > 0) e.aggroTimer = Math.max(0, e.aggroTimer - DT);
       if (e.dashCooldown > 0) e.dashCooldown = Math.max(0, e.dashCooldown - DT);
 
@@ -1023,6 +1022,8 @@ if (sameFloor && (rectsOverlap(hero, slashBox) || rectsOverlap(hero, e))) {
         }
         e.facing = e.vx < 0 ? -1 : 1;
       }
+
+      snapEnemyToGround(scr, e);
       continue;
     }
 
