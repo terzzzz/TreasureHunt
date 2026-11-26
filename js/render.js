@@ -911,7 +911,7 @@ function drawBlindSightMask() {
 
   blurCtx.save();
   blurCtx.globalCompositeOperation = "destination-out";
-  const holeGrad = blurCtx.createRadialGradient(sx, sy, sightRadius * 0.65, sx, sy, sightRadius);
+  const holeGrad = blurCtx.createRadialGradient(sx, sy, sightRadius * 0.45, sx, sy, sightRadius);
   holeGrad.addColorStop(0, "rgba(0, 0, 0, 1)");
   holeGrad.addColorStop(1, "rgba(0, 0, 0, 0)");
   blurCtx.fillStyle = holeGrad;
