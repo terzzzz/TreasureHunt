@@ -490,8 +490,35 @@ const EXTRA_SPRITES = {
   ])
 };
 
+// Loads background templates trying .jpg / .jpeg / .png automatically
+function loadImageWithExtFallback(basePathNoExt, exts = [".jpg", ".jpeg", ".png"]) {
+  const img = new Image();
+  img.loaded = false;
+  let idx = 0;
+
+  function tryLoad() {
+    if (idx >= exts.length) {
+      img.loaded = false;
+      return;
+    }
+    img.src = `${basePathNoExt}${exts[idx++]}`;
+  }
+
+  img.onload = () => { img.loaded = true; };
+  img.onerror = () => tryLoad();
+  tryLoad();
+  return img;
+}
+
+const STAGE_001_BG_TEMPLATES = {
+  bg001: loadImageWithExtFallback("./Stages/001/bg/bg001"),
+  bg002: loadImageWithExtFallback("./Stages/001/bg/bg002"),
+  bg003: loadImageWithExtFallback("./Stages/001/bg/bg003")
+};
+
 function ensureStartScreenAlien(scr) {
   if (!scr) return;
+  if (!scr.bgTemplate) scr.bgTemplate = "bg001";
   scr.enemies = (scr.enemies || []).filter(e => e.kind !== "blade" && e.kind !== "alien");
   scr.pickups = (scr.pickups || []).filter(p => p.type !== "hat");
 
