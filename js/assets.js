@@ -155,6 +155,12 @@ const SFX = {
       bgm.play().catch(() => {});
     }
   },
+
+  toggleMute() {
+    this.muted = !this.muted;
+    this.syncBgm();
+  },
+  
   beep(freq, dur, type = "square", gainVal = 0.08, slideTo = null) {
     if (this.muted || !this.ctx) return;
     const deafMult = hero.traits.deaf ? (hero.stats?.sfxGainMultiplier ?? 0.30) : 1.0;
