@@ -217,6 +217,161 @@ function loadSpriteFloodFill(primarySrc, fallbackSrc) {
   return entry;
 }
 
+// Extracts the 3 treasure chest icons side-by-side from Stages/001/treasure.jpeg into separate cropped canvases
+function loadTreasureSheetSprite(sources) {
+  const entry = { img: new Image(), items: [], loaded: false };
+  let srcIndex = 0;
+
+  function cropSlice(off, d, w, h, xStart, xEnd) {
+    let minX = xEnd, maxX = xStart, minY = h, maxY = 0;
+    for (let y = 0; y < h; y++) {
+      for (let x = xStart; x <= xEnd; x++) {
+        if (d[(y * w + x) * 4 + 3] > 16) {
+          if (x < minX) minX = x;
+          if (x > maxX) maxX = x;
+          if (y < minY) minY = y;
+          if (y > maxY) maxY = y;
+        }
+      }
+    }
+    if (maxX <= minX || maxY <= minY) return null;
+    const cw = maxX - minX + 1;
+    const ch = maxY - minY + 1;
+    const c = document.createElement("canvas");
+    c.width = cw;
+    c.height = ch;
+    c.getContext("2d").drawImage(off, minX, minY, cw, ch, 0, 0, cw, ch);
+    return c;
+  }
+
+  function processSheet(img) {
+    const w = img.naturalWidth;
+    const h = img.naturalHeight;
+    const off = document.createElement("canvas");
+    off.width = w;
+    off.height = h;
+    const octx = off.getContext("2d");
+    octx.drawImage(img, 0, 0);
+
+    try {
+      const imgData = octx.getImageData(0, 0, w, h);
+      const d = imgData.data;
+      const bgR = d[0], bgG = d[1], bgB = d[2];
+      const visited = new Uint8Array(w * h);
+      const queue = new Int32Array(w * h);
+      let head = 0;
+      let tail = 0;
+
+      const isBgPixel = (idx) => {
+        const p = idx * 4;
+        if (d[p + 3] === 0) return true;
+        const r = d[p], g = d[p + 1], b = d[p + 2];
+        const dist = Math.hypot(r - bgR, g - bgG, b - bgB);
+        const isNearWhite = r > 236 && g > 236 && b > 236;
+        return dist < 24 || isNearWhite;
+      };
+
+      for (let x = 0; x < w; x++) {
+        const topIdx = x;
+        const botIdx = (h - 1) * w + x;
+        if (!visited[topIdx] && isBgPixel(topIdx)) { visited[topIdx] = 1; queue[tail++] = topIdx; }
+        if (!visited[botIdx] && isBgPixel(botIdx)) { visited[botIdx] = 1; queue[tail++] = botIdx; }
+      }
+      for (let y = 1; y < h - 1; y++) {
+        const leftIdx = y * w;
+        const rightIdx = y * w + (w - 1);
+        if (!visited[leftIdx] && isBgPixel(leftIdx)) { visited[leftIdx] = 1; queue[tail++] = leftIdx; }
+        if (!visited[rightIdx] && isBgPixel(rightIdx)) { visited[rightIdx] = 1; queue[tail++] = rightIdx; }
+      }
+
+      while (head < tail) {
+        const idx = queue[head++];
+        d[idx * 4 + 3] = 0;
+        const x = idx % w;
+        const y = (idx - x) / w;
+        if (x > 0 && !visited[idx - 1] && isBgPixel(idx - 1)) { visited[idx - 1] = 1; queue[tail++] = idx - 1; }
+        if (x + 1 < w && !visited[idx + 1] && isBgPixel(idx + 1)) { visited[idx + 1] = 1; queue[tail++] = idx + 1; }
+        if (y > 0 && !visited[idx - w] && isBgPixel(idx - w)) { visited[idx - w] = 1; queue[tail++] = idx - w; }
+        if (y + 1 < h && !visited[idx + w] && isBgPixel(idx + w)) { visited[idx + w] = 1; queue[tail++] = idx + w; }
+      }
+
+      octx.putImageData(imgData, 0, 0);
+
+      // Find contiguous horizontal column runs for each of the 3 treasure chests
+      const colHasInk = new Uint8Array(w);
+      for (let x = 0; x < w; x++) {
+        for (let y = 0; y < h; y++) {
+          if (d[(y * w + x) * 4 + 3] > 24) {
+            colHasInk[x] = 1;
+            break;
+          }
+        }
+      }
+
+      const rawSegments = [];
+      let segStart = -1;
+      for (let x = 0; x < w; x++) {
+        if (colHasInk[x] && segStart === -1) {
+          segStart = x;
+        } else if (!colHasInk[x] && segStart !== -1) {
+          if (x - segStart >= 16) rawSegments.push([segStart, x - 1]);
+          segStart = -1;
+        }
+      }
+      if (segStart !== -1 && w - segStart >= 16) {
+        rawSegments.push([segStart, w - 1]);
+      }
+
+      const extracted = [];
+      if (rawSegments.length === 3) {
+        for (const [sx, ex] of rawSegments) {
+          const itemCanvas = cropSlice(off, d, w, h, sx, ex);
+          if (itemCanvas) extracted.push(itemCanvas);
+        }
+      } else {
+        // Fallback: split into 3 equal horizontal thirds and tight-crop each
+        const thirdW = Math.floor(w / 3);
+        for (let k = 0; k < 3; k++) {
+          const sx = k * thirdW;
+          const ex = k === 2 ? w - 1 : (k + 1) * thirdW - 1;
+          const itemCanvas = cropSlice(off, d, w, h, sx, ex);
+          if (itemCanvas) extracted.push(itemCanvas);
+        }
+      }
+
+      if (extracted.length > 0) {
+        entry.items = extracted;
+        entry.loaded = true;
+        return;
+      }
+    } catch (_) {}
+
+    // Tainted-canvas fallback if opened directly via file:// without a local server
+    const thirdW = Math.floor(w / 3);
+    for (let k = 0; k < 3; k++) {
+      const c = document.createElement("canvas");
+      c.width = thirdW;
+      c.height = h;
+      c.getContext("2d").drawImage(img, k * thirdW, 0, thirdW, h, 0, 0, thirdW, h);
+      entry.items.push(c);
+    }
+    entry.loaded = true;
+  }
+
+  function tryNextSource() {
+    if (srcIndex >= sources.length) {
+      entry.loaded = false;
+      return;
+    }
+    entry.img.src = sources[srcIndex++];
+  }
+
+  entry.img.onload = () => processSheet(entry.img);
+  entry.img.onerror = () => tryNextSource();
+  tryNextSource();
+  return entry;
+}
+
 function loadOptionalImage(src) {
   const img = new Image();
   img.loaded = false;
@@ -317,16 +472,22 @@ function loadGroundEnemySprite(primarySrc, fallbackSrc, floorCutoffRatio = 0.785
 }
 
 const EXTRA_SPRITES = {
-  giant:      loadGroundEnemySprite("./char/giant.jpeg", "./char/giant.png", 0.785),
-  giantAxe:   loadOptionalImage("./char/giant_axe.png"),
-  blade:      loadGroundEnemySprite("./char/blade.jpeg", "./char/blade_enemy.png", 0.785),
-  alien:      loadGroundEnemySprite("./char/alien.png", "./char/alien.jpeg", 0.90),
-  hat:        loadGroundEnemySprite("./char/hat.png", "./char/hat.jpeg", 1.0),
-  cannonball: loadSpriteFloodFill("./char/cannonball.png", "./char/cannonball.jpeg"),
-  chicken:    loadOptionalImage("./char/chicken.png"),
-  bone:       loadOptionalImage("./char/bone.png"),
-  crown:      loadOptionalImage("./char/crown.png"),
-  treasure:   loadOptionalImage("./char/treasure.png")
+  giant:        loadGroundEnemySprite("./char/giant.jpeg", "./char/giant.png", 0.785),
+  giantAxe:     loadOptionalImage("./char/giant_axe.png"),
+  blade:        loadGroundEnemySprite("./char/blade.jpeg", "./char/blade_enemy.png", 0.785),
+  alien:        loadGroundEnemySprite("./char/alien.png", "./char/alien.jpeg", 0.90),
+  hat:          loadGroundEnemySprite("./char/hat.png", "./char/hat.jpeg", 1.0),
+  cannonball:   loadSpriteFloodFill("./char/cannonball.png", "./char/cannonball.jpeg"),
+  chicken:      loadOptionalImage("./char/chicken.png"),
+  bone:         loadOptionalImage("./char/bone.png"),
+  crown:        loadOptionalImage("./char/crown.png"),
+  treasure:     loadOptionalImage("./char/treasure.png"),
+  treasureSheet: loadTreasureSheetSprite([
+    "./Stages/001/treasure.jpeg",
+    "./stage/001/treasure.jpeg",
+    "./Stages/001/treasure.jpg",
+    "./Stages/001/treasure.png"
+  ])
 };
 
 function ensureStartScreenAlien(scr) {
