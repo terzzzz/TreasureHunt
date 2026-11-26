@@ -335,18 +335,44 @@ function drawBladeEnemy(e) {
 
 function drawAxeGiant(g) {
   ctx.save();
-  const step = Math.floor(g.animTimer * 9);
-  const bobY = g.aiState === "WALK" ? (step % 2 === 0 ? -4 : 0) : 0;
-  const tilt = g.aiState === "WALK" ? (step % 2 === 0 ? -0.05 : 0.05) : (g.aiState === "WINDUP" ? -0.14 : 0.08);
-  const scaleMult = g.isBoss ? (g.h / 96) : 1.0;
+  const isCharging = g.aiState === "CHARGE_RUN";
+  const isWinding = g.aiState === "STAND_WINDUP" || g.aiState === "CHARGE_WINDUP";
+  const isSwinging = g.aiState === "STAND_STRIKE" || isCharging;
+  const step = Math.floor(g.animTimer * (isCharging ? 15 : 9));
+
+  const bobY = (g.aiState === "PATROL" || g.aiState === "WALK" || g.aiState === "CHASE" || isCharging)
+    ? (step % 2 === 0 ? -4 : 0)
+    : 0;
+  const tilt = isCharging
+    ? 0.16
+    : (isWinding ? -0.16 : (g.aiState === "STAND_STRIKE" ? 0.14 : (step % 2 === 0 ? -0.04 : 0.04)));
 
   ctx.translate(g.x + g.w / 2, g.y + g.h + bobY);
-  ctx.scale(g.facing * scaleMult, scaleMult);
+  ctx.scale(g.facing, 1);
   ctx.rotate(tilt);
 
   if (EXTRA_SPRITES.giant.loaded) {
-    ctx.drawImage(EXTRA_SPRITES.giant, -24, -96, 48, 96);
+    const src = EXTRA_SPRITES.giant.canvas || EXTRA_SPRITES.giant.img;
+    // Draw cropped pixel-art axeman slightly wider than hitbox so the extended axe aligns with weaponLength
+    const drawW = g.w * 1.48;
+    const drawH = g.h;
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(src, -drawW * 0.40, -drawH, drawW, drawH);
+    ctx.imageSmoothingEnabled = true;
+
+    if (g.hurtTimer > 0) {
+      ctx.fillStyle = "rgba(220, 38, 38, 0.35)";
+      ctx.fillRect(-g.w * 0.45, -drawH, g.w * 0.9, drawH);
+    }
+
+    if (g.isBoss) {
+      ctx.fillStyle = "#facc15";
+      ctx.fillRect(-14, -drawH - 6, 28, 6);
+    }
   } else {
+    const scaleMult = g.h / 92;
+    ctx.save();
+    ctx.scale(scaleMult, scaleMult);
     ctx.strokeStyle = g.hurtTimer > 0 ? "#dc2626" : (g.isBoss ? "#7f1d1d" : "#1e293b");
     ctx.fillStyle = g.hurtTimer > 0 ? "#fecaca" : (g.isBoss ? "#fde68a" : "#e2e8f0");
     ctx.lineWidth = 2.6;
@@ -357,62 +383,45 @@ function drawAxeGiant(g) {
     ctx.strokeRect(5, -32, 13, 32);
     ctx.fillRect(-24, -76, 48, 44);
     ctx.strokeRect(-24, -76, 48, 44);
-    ctx.strokeRect(-33, -72, 9, 32);
 
     ctx.beginPath();
     ctx.arc(0, -88, 13, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(-6, -91); ctx.lineTo(-2, -91);
-    ctx.moveTo(2, -91);  ctx.lineTo(6, -91);
-    ctx.moveTo(-5, -82); ctx.lineTo(5, -83);
-    ctx.stroke();
-
-    if (g.isBoss) {
-      ctx.fillStyle = "#facc15";
-      ctx.fillRect(-10, -104, 20, 5);
-    }
+    ctx.restore();
   }
 
-  ctx.save();
-  ctx.translate(18, -62);
-  ctx.rotate(g.weaponAngle);
-  const baseWpnLen = g.weaponLength / scaleMult;
-  if (EXTRA_SPRITES.giantAxe.loaded) {
-    ctx.drawImage(EXTRA_SPRITES.giantAxe, -6, -baseWpnLen, 26, baseWpnLen);
-  } else {
-    ctx.strokeStyle = "#1e293b";
-    ctx.lineWidth = 3;
+  // Sweeping slash arc visual during standing or charging axe swing
+  if (isSwinging) {
+    const arcRadius = g.weaponLength || 68;
+    ctx.strokeStyle = isCharging ? "rgba(245, 158, 11, 0.85)" : "rgba(220, 38, 38, 0.80)";
+    ctx.lineWidth = 6;
     ctx.beginPath();
-    ctx.moveTo(0, 10);
-    ctx.lineTo(0, -baseWpnLen);
+    ctx.arc(12, -g.h * 0.55, arcRadius * 0.82, -1.45, 0.55);
     ctx.stroke();
+  }
 
-    ctx.fillStyle = g.isBoss ? "#f59e0b" : "#94a3b8";
-    ctx.beginPath();
-    ctx.moveTo(0, -baseWpnLen + 4);
-    ctx.lineTo(22, -baseWpnLen - 8);
-    ctx.quadraticCurveTo(26, -baseWpnLen + 10, 20, -baseWpnLen + 24);
-    ctx.lineTo(0, -baseWpnLen + 16);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-  }
-  if (g.aiState === "STRIKE") {
-    ctx.strokeStyle = "rgba(220, 38, 38, 0.7)";
-    ctx.lineWidth = 5;
-    ctx.beginPath();
-    ctx.arc(0, 0, baseWpnLen, -1.7, 0.3);
-    ctx.stroke();
-  }
-  ctx.restore();
   ctx.restore();
 
+  // HP Bar & Aggro / Charge Telegraph Indicator
   ctx.fillStyle = "#1e293b";
   ctx.fillRect(g.x, g.y - 12, g.w, 6);
-  ctx.fillStyle = g.isBoss ? "#f59e0b" : "#dc2626";
+  ctx.fillStyle = g.isBoss ? "#f59e0b" : (g.alerted ? "#dc2626" : "#64748b");
   ctx.fillRect(g.x + 1, g.y - 11, (g.w - 2) * Math.max(0, g.hp / g.maxHp), 4);
+
+  if (g.aiState === "CHARGE_WINDUP" || isCharging) {
+    ctx.fillStyle = "#dc2626";
+    ctx.font = "bold 11px monospace";
+    ctx.textAlign = "center";
+    ctx.fillText("CHARGE!", g.x + g.w / 2, g.y - 18);
+    ctx.textAlign = "left";
+  } else if (g.alertTimer > 0) {
+    ctx.fillStyle = "#facc15";
+    ctx.font = "bold 15px monospace";
+    ctx.textAlign = "center";
+    ctx.fillText("!", g.x + g.w / 2, g.y - 18);
+    ctx.textAlign = "left";
+  }
 }
 
 function drawSpriteLayer(layer, dx, dy, dw, dh, clipZone = null) {
