@@ -90,6 +90,44 @@ function createEnemyInstance(kind, centerX, floorY, minX, maxX, transitions = 0,
     };
   }
 
+  if (kind === "knifer") {
+    const w = 32;
+    const h = 51; // ~8% shorter than the 56px hero
+    const hp = Math.round(34 * scale); // ~75% of Blademan HP
+    return {
+      kind: "knifer",
+      isBoss: false,
+      x: Math.round(centerX - w * 0.5),
+      y: floorY - h,
+      w,
+      h,
+      vx: -46 * Math.min(1.4, scale),
+      chaseSpeed: 56 * Math.min(1.4, scale),
+      dashSpeed: 265 * Math.min(1.35, scale),
+      dashWindup: 0.26,
+      dashDuration: 0.22,
+      dashCooldown: 0,
+      dashCooldownTime: 1.35,
+      dashDir: -1,
+      struckThisDash: false,
+      visionRange: 340,
+      alerted: false,
+      aggroTimer: 0,
+      minX,
+      maxX,
+      facing: -1,
+      hp,
+      maxHp: hp,
+      atk: Math.round(13 * atkMult),
+      scoreValue: 260,
+      aiState: "PATROL",
+      aiTimer: 0,
+      animTimer: 0,
+      hurtTimer: 0,
+      alive: true
+    };
+  }
+
   const w = 34;
   const h = 56;
   return {
@@ -168,7 +206,8 @@ function generateProceduralScreen(runSeed, stageIndex) {
       openRight: false,
       openUp: false,
       openDown: false,
-      hatch: null
+      hatch: null,
+      hasFloor: false
     }))
   );
 
@@ -281,6 +320,7 @@ function generateProceduralScreen(runSeed, stageIndex) {
 
       if (r < ROWS - 1) {
         if (cell.hatch) {
+          cell.hasFloor = true;
           const hx = cell.hatch.x;
           const hw = cell.hatch.w;
           if (hx > x0) {
@@ -291,12 +331,15 @@ function generateProceduralScreen(runSeed, stageIndex) {
             solids.push({ x: hx + hw, y: cellFloorY, w: x1 - (hx + hw), h: 16, hatched: true });
           }
         } else if (!isSpacious || rng() < 0.55) {
+          cell.hasFloor = true;
           solids.push({ x: x0, y: cellFloorY, w: x1 - x0, h: 16, hatched: true });
         } else {
           const platW = randInt(110, 185);
           const platX = Math.round(x0 + randInt(24, Math.max(26, (x1 - x0) - platW - 24)));
           oneWay.push({ x: platX, y: cellFloorY, w: platW, h: 10 });
         }
+      } else {
+        cell.hasFloor = true;
       }
 
       if (c < COLS - 1 && !cell.openRight) {
@@ -332,23 +375,63 @@ function generateProceduralScreen(runSeed, stageIndex) {
     dir: "right"
   };
 
-  const enemyCount = Math.min(9, 3 + Math.floor(stageIndex * 0.55));
-  for (let i = 0; i < enemyCount; i++) {
-    const ec = randInt(1, COLS - 1);
-    const er = randInt(0, ROWS - 1);
-    if (ec === 0 && er === startRow) continue;
+  // Pick candidate spots and spawn 1–3 independently rolled enemies (blade, knifer, or giant) per spot
+  const candidateSpots = [];
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      if (c === 0 && r === startRow) continue; // Keep player entry cell clear
+      if (grid[r][c].hasFloor) {
+        candidateSpots.push({ r, c });
+      }
+    }
+  }
+  if (candidateSpots.length === 0) {
+    candidateSpots.push({ r: ROWS - 1, c: 1 }, { r: ROWS - 1, c: 2 });
+  }
+
+  for (let i = candidateSpots.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [candidateSpots[i], candidateSpots[j]] = [candidateSpots[j], candidateSpots[i]];
+  }
+
+  const maxRoomEnemies = Math.min(10, 3 + Math.floor(stageIndex * 0.65));
+  const spotsToPopulate = Math.min(candidateSpots.length, randInt(2, 4));
+  const giantChance = Math.min(0.32, 0.14 + stageIndex * 0.015);
+  const kniferChance = 0.40;
+
+  for (let sIdx = 0; sIdx < spotsToPopulate; sIdx++) {
+    if (enemies.length >= maxRoomEnemies) break;
+    const { r: er, c: ec } = candidateSpots[sIdx];
 
     const ex0 = Math.round(ec * cellW + 28);
     const ex1 = Math.round((ec + 1) * cellW - 28);
+    const spanW = Math.max(60, ex1 - ex0);
     const ey = (er === ROWS - 1) ? floorBaseY : Math.round(topMargin + (er + 1) * cellH - 16);
-    const isGiant = stageIndex >= 3 && rng() < Math.min(0.45, 0.15 + stageIndex * 0.02);
 
-    const enemy = createEnemyInstance(isGiant ? "giant" : "blade", (ex0 + ex1) * 0.5, ey, ex0, ex1, stageIndex, false);
-    if (!isGiant) {
-      enemy.vx = (rng() < 0.5 ? -1 : 1) * Math.abs(enemy.vx);
+    // Sometimes 1 solo enemy, sometimes a group of 2 or 3 at this spot
+    const groupRoll = rng();
+    const desiredGroup = groupRoll < 0.52 ? 1 : (groupRoll < 0.84 ? 2 : 3);
+    const groupCount = Math.min(desiredGroup, maxRoomEnemies - enemies.length);
+
+    for (let g = 0; g < groupCount; g++) {
+      const typeRoll = rng();
+      let kind = "blade";
+      if (typeRoll < giantChance) {
+        kind = "giant";
+      } else if (typeRoll < giantChance + kniferChance) {
+        kind = "knifer";
+      }
+
+      const slotCenter = ex0 + ((g + 0.5) / groupCount) * spanW + (rng() - 0.5) * 18;
+      const clampedX = Math.max(ex0 + 24, Math.min(ex1 - 24, slotCenter));
+      const enemy = createEnemyInstance(kind, clampedX, ey, ex0, ex1, stageIndex, false);
+
+      const dirSign = rng() < 0.5 ? -1 : 1;
+      enemy.vx = dirSign * Math.abs(enemy.vx);
+      enemy.facing = dirSign;
       enemy.animTimer = rng() * 6;
+      enemies.push(enemy);
     }
-    enemies.push(enemy);
   }
 
   if (stageIndex > 0 && stageIndex % 10 === 0 && enemies.length > 0) {
@@ -375,6 +458,7 @@ function generateProceduralScreen(runSeed, stageIndex) {
   return {
     id: `random.${String(stageIndex).padStart(2, "0")}`,
     roomType: "RANDOM",
+    bgTemplate: "bg001",
     worldW,
     worldH,
     pageLeft: stageIndex * 2 + 1,
@@ -394,6 +478,7 @@ function generateBossScreen(transitions) {
   return {
     id: "boss_chamber",
     roomType: "BOSS",
+    bgTemplate: "bg001",
     worldW: W,
     worldH: H,
     pageLeft: "BOSS",
@@ -436,6 +521,7 @@ function generateTreasureScreen(transitions) {
   return {
     id: "treasure_vault",
     roomType: "TREASURE",
+    bgTemplate: "bg001",
     isFinal: true,
     worldW: W,
     worldH: H,
