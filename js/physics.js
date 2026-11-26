@@ -272,7 +272,7 @@ function stepHero(input, scr) {
       x: muzzleX, y: muzzleY - 4,
       vx: dirX * boneSpeed + hero.vx * 0.15,
       vy: dirY * boneSpeed - 150,
-      rot: 0, damage: 55
+      rot: 0
     });
     SFX.beep(440, 0.12, "triangle", 0.09, 680);
   }
@@ -351,13 +351,15 @@ function stepProjectilesAndPickups(scr) {
     if (rectsOverlap(hero, p)) {
       p.collected = true;
       if (p.type === "chicken") {
-        hero.hp = Math.min(hero.maxHp, hero.hp + 45);
-        hero.bones = 4;
+        // Recovers 50 HP and grants +2 chicken bones
+        hero.hp = Math.min(hero.maxHp, hero.hp + 50);
+        hero.bones += 2;
         hero.asthma = 0;
         game.score += 200;
         spawnParticles(p.x + p.w / 2, p.y + p.h / 2, "#e08a2e", 10, 140);
         SFX.beep(520, 0.18, "triangle", 0.1, 880);
       } else if (p.type === "hat") {
+        // Permanent 頂帽大炮 worn until the end of the game
         hero.hasMissileHat = true;
         hero.hatCooldown = 0;
         game.score += 500;
@@ -424,7 +426,9 @@ function stepProjectilesAndPickups(scr) {
     for (const e of scr.enemies) {
       if (!e.alive) continue;
       if (bone.x >= e.x - 6 && bone.x <= e.x + e.w + 6 && bone.y >= e.y - 6 && bone.y <= e.y + e.h + 6) {
-        damageEnemy(e, bone.damage, bone.x, bone.y);
+        // Chicken bone deals 15% of any enemy's remaining HP
+        const boneDmg = Math.max(1, Math.round(e.hp * 0.15));
+        damageEnemy(e, boneDmg, bone.x, bone.y);
         spawnParticles(bone.x, bone.y, "#fef08a", 12, 170);
         hitEnemy = true;
         break;
@@ -498,7 +502,7 @@ function hasGiantLineOfSight(scr, g) {
   const closeBehind = absDx <= 64;
   if (!inFront && !closeBehind) return false;
 
-  // Check if a solid wall blocks line of sight between giant's eye level and hero's chest
+  // Check if a solid wall blocks line of sight between enemy's eye level and hero's chest
   const eyeY = g.y + g.h * 0.28;
   const minRayX = Math.min(gx, hx);
   const maxRayX = Math.max(gx, hx);
@@ -518,14 +522,35 @@ function damageEnemy(enemy, dmg, hitX, hitY) {
   spawnParticles(hitX, hitY, "#dc2626", 6, 120);
   SFX.beep(190, 0.07, "square", 0.07, 110);
 
-  // Shooting or hitting the giant immediately activates him to hunt the player
-  if (enemy.kind === "giant" && enemy.hp > 0) {
-    alertGiantAxeman(enemy);
+  if (enemy.hp > 0) {
+    if (enemy.kind === "giant") {
+      alertGiantAxeman(enemy);
+    } else if (enemy.kind === "blade") {
+      enemy.alerted = true;
+      enemy.aggroTimer = 5.0;
+      enemy.facing = (hero.x + hero.w * 0.5) < (enemy.x + enemy.w * 0.5) ? -1 : 1;
+    }
   }
 
   if (enemy.hp <= 0) {
     enemy.alive = false;
     game.score += enemy.scoreValue || (enemy.kind === "giant" ? 800 : 250);
+
+    // When the Alien vanishes in start.jpeg, drop the permanent 頂帽大炮 at its feet
+    if (enemy.kind === "alien" && game.activeScreen && Array.isArray(game.activeScreen.pickups)) {
+      game.activeScreen.pickups.push({
+        type: "hat",
+        name: "頂帽大炮",
+        x: Math.round(enemy.x + enemy.w * 0.5 - 22),
+        y: Math.round(enemy.y + enemy.h - 32),
+        w: 44,
+        h: 32,
+        collected: false
+      });
+      spawnParticles(enemy.x + enemy.w / 2, enemy.y + enemy.h / 2, "#38bdf8", 22, 210);
+      SFX.beep(520, 0.28, "triangle", 0.12, 980);
+    }
+
     if (enemy.isBoss) {
       game.bossDefeated = true;
       game.shakeTimer = 0.45;
@@ -543,23 +568,64 @@ function stepEnemies(scr) {
     if (!e.alive) continue;
     if (e.hurtTimer > 0) e.hurtTimer = Math.max(0, e.hurtTimer - DT);
 
-    if (e.kind === "blade") {
-      e.animTimer += DT;
-      e.x += e.vx * DT;
-      if (e.x <= e.minX) { e.x = e.minX; e.vx = Math.abs(e.vx); e.facing = 1; }
-      if (e.x + e.w >= e.maxX) { e.x = e.maxX - e.w; e.vx = -Math.abs(e.vx); e.facing = -1; }
+    // Alien (頂帽大炮 carrier): stands still, never shoots or deals contact damage, always looks at player
+    if (e.kind === "alien") {
+      const ex = e.x + e.w * 0.5;
+      const hx = hero.x + hero.w * 0.5;
+      e.facing = hx < ex ? -1 : 1;
+      continue;
+    }
 
-      const dist = Math.abs((hero.x + hero.w / 2) - (e.x + e.w / 2));
-      const sameFloor = Math.abs((hero.y + hero.h) - (e.y + e.h)) < 60;
-      if (dist < 68 && sameFloor) {
-        e.facing = hero.x < e.x ? -1 : 1;
-        e.slashTimer = 0.22;
-      } else if (e.slashTimer > 0) {
-        e.slashTimer = Math.max(0, e.slashTimer - DT);
+    if (e.kind === "blade") {
+      if (e.slashCooldown > 0) e.slashCooldown = Math.max(0, e.slashCooldown - DT);
+      if (e.slashTimer > 0) e.slashTimer = Math.max(0, e.slashTimer - DT);
+
+      const ex = e.x + e.w * 0.5;
+      const hx = hero.x + hero.w * 0.5;
+      const dx = hx - ex;
+      const dist = Math.abs(dx);
+      const sameFloor = Math.abs((hero.y + hero.h) - (e.y + e.h)) < 68;
+      const canSee = hasGiantLineOfSight(scr, e);
+
+      if (canSee) {
+        e.alerted = true;
+        e.aggroTimer = 4.5;
+      } else if (e.alerted) {
+        e.aggroTimer -= DT;
+        if (e.aggroTimer <= 0 && dist > 420) e.alerted = false;
       }
 
-      if (rectsOverlap(hero, e)) {
-        damageHero(e.atk || Math.round(16 * atkMult), hero.x < e.x ? -1 : 1);
+      if (e.alerted && sameFloor) {
+        // Sprint directly toward player
+        e.animTimer += DT * 1.8;
+        const dir = dx < 0 ? -1 : 1;
+        e.facing = dir;
+        const runSpeed = e.chaseSpeed || 235;
+        e.x = Math.max(e.minX, Math.min(e.maxX - e.w, e.x + dir * runSpeed * DT));
+      } else {
+        // Patrol until player is spotted
+        e.animTimer += DT;
+        e.x += e.vx * DT;
+        if (e.x <= e.minX) { e.x = e.minX; e.vx = Math.abs(e.vx); e.facing = 1; }
+        if (e.x + e.w >= e.maxX) { e.x = e.maxX - e.w; e.vx = -Math.abs(e.vx); e.facing = -1; }
+      }
+
+      // Sword slash attack when reaching player (15 base dmg)
+      const slashBox = {
+        x: e.facing === 1 ? e.x + e.w * 0.4 : e.x - 22,
+        y: e.y + 8,
+        w: e.w * 0.6 + 22,
+        h: e.h - 12
+      };
+
+      if (sameFloor && (rectsOverlap(hero, slashBox) || rectsOverlap(hero, e))) {
+        e.facing = dx < 0 ? -1 : 1;
+        if (e.slashCooldown <= 0) {
+          e.slashTimer = 0.24;
+          e.slashCooldown = 0.65;
+          SFX.beep(260, 0.08, "sawtooth", 0.07, 140);
+          damageHero(e.atk || Math.round(15 * atkMult), e.facing);
+        }
       }
       continue;
     }
@@ -645,7 +711,7 @@ function stepEnemies(scr) {
           };
           if (rectsOverlap(hero, axeBox)) {
             e.struckThisSwing = true;
-            damageHero(e.cleaveAtk || Math.round(28 * atkMult), e.facing);
+            damageHero(e.cleaveAtk || Math.round(24 * atkMult), e.facing);
           }
         }
         if (e.aiTimer <= 0) {
@@ -692,7 +758,7 @@ function stepEnemies(scr) {
           };
           if (rectsOverlap(hero, swingBox)) {
             e.struckThisSwing = true;
-            damageHero(e.chargeAtk || Math.round(32 * atkMult), dir);
+            damageHero(e.chargeAtk || Math.round(24 * atkMult), dir);
           }
         }
 
@@ -710,7 +776,7 @@ function stepEnemies(scr) {
       }
 
       if (rectsOverlap(hero, e)) {
-        damageHero(e.atk || Math.round(18 * atkMult), hero.x < e.x ? -1 : 1);
+        damageHero(e.atk || Math.round(24 * atkMult), hero.x < e.x ? -1 : 1);
       }
     }
   }
