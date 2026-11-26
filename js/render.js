@@ -290,47 +290,52 @@ function drawScreenEntities(scr) {
 }
 
 function drawBladeEnemy(e) {
-  const cx = e.x + e.w / 2;
-  const step = Math.sin(e.animTimer * 12) * 5;
   ctx.save();
+  const step = Math.floor(e.animTimer * (e.alerted ? 16 : 10));
+  const bobY = step % 2 === 0 ? -2.5 : 0;
+  ctx.translate(e.x + e.w / 2, e.y + e.h + bobY);
+  ctx.scale(e.facing, 1);
+
   if (EXTRA_SPRITES.blade.loaded) {
-    ctx.translate(cx, e.y + e.h);
-    ctx.scale(e.facing, 1);
-    ctx.drawImage(EXTRA_SPRITES.blade, -e.w / 2, -e.h, e.w, e.h);
-    ctx.restore();
-    return;
+    const src = EXTRA_SPRITES.blade.canvas || EXTRA_SPRITES.blade.img;
+    const drawW = e.w * 1.42;
+    const drawH = e.h;
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(src, -drawW * 0.38, -drawH, drawW, drawH);
+    ctx.imageSmoothingEnabled = true;
+
+    if (e.hurtTimer > 0) {
+      ctx.fillStyle = "rgba(220, 38, 38, 0.35)";
+      ctx.fillRect(-e.w * 0.45, -drawH, e.w * 0.9, drawH);
+    }
+  } else {
+    ctx.strokeStyle = e.hurtTimer > 0 ? "#dc2626" : "#1e293b";
+    ctx.fillStyle = e.hurtTimer > 0 ? "#fecaca" : "#f8fafc";
+    ctx.lineWidth = 2;
+    ctx.fillRect(-10, -40, 20, 24);
+    ctx.strokeRect(-10, -40, 20, 24);
+    ctx.beginPath();
+    ctx.arc(0, -47, 7, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
   }
-  ctx.strokeStyle = e.hurtTimer > 0 ? "#dc2626" : "#1e293b";
-  ctx.lineWidth = 2.4;
 
-  ctx.beginPath();
-  ctx.arc(cx, e.y + 9, 7, 0, Math.PI * 2);
-  ctx.moveTo(cx, e.y + 16);
-  ctx.lineTo(cx, e.y + 34);
-  ctx.moveTo(cx, e.y + 34);
-  ctx.lineTo(cx - 7 + step, e.y + e.h);
-  ctx.moveTo(cx, e.y + 34);
-  ctx.lineTo(cx + 7 - step, e.y + e.h);
-  const handX = cx + e.facing * 10;
-  const handY = e.y + 22;
-  ctx.moveTo(cx, e.y + 21);
-  ctx.lineTo(handX, handY);
-  ctx.stroke();
+  // Sword slash arc when striking
+  if (e.slashTimer > 0) {
+    ctx.strokeStyle = "rgba(220, 38, 38, 0.88)";
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.arc(10, -e.h * 0.48, 28, -1.2, 0.7);
+    ctx.stroke();
+  }
 
-  const slashTilt = e.slashTimer > 0 ? e.facing * 0.9 : 0;
-  ctx.save();
-  ctx.translate(handX, handY);
-  ctx.rotate(slashTilt);
-  ctx.fillStyle = "#cbd5e1";
-  ctx.beginPath();
-  ctx.moveTo(0, 0);
-  ctx.quadraticCurveTo(e.facing * 10, -12, e.facing * 3, -22);
-  ctx.lineTo(-e.facing * 2, -2);
-  ctx.closePath();
-  ctx.fill();
-  ctx.stroke();
   ctx.restore();
-  ctx.restore();
+
+  // HP Bar
+  ctx.fillStyle = "#1e293b";
+  ctx.fillRect(e.x, e.y - 9, e.w, 4);
+  ctx.fillStyle = e.alerted ? "#dc2626" : "#64748b";
+  ctx.fillRect(e.x, e.y - 9, e.w * Math.max(0, e.hp / e.maxHp), 4);
 }
 
 function drawAxeGiant(g) {
