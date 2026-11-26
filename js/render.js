@@ -280,7 +280,29 @@ function drawScreenEntities(scr) {
       ctx.fillText("頂帽大炮", p.x + p.w * 0.5, p.y - 3 + bob);
       ctx.textAlign = "left";
     } else if (p.type === "treasure") {
-      if (EXTRA_SPRITES.treasure.loaded) {
+      const sheetItems = EXTRA_SPRITES.treasureSheet?.items;
+      const variant = p.treasureVariant ?? 0;
+      const chestCanvas = (EXTRA_SPRITES.treasureSheet?.loaded && sheetItems && sheetItems.length > 0)
+        ? sheetItems[variant % sheetItems.length]
+        : null;
+
+      if (chestCanvas) {
+        const aspect = chestCanvas.width / chestCanvas.height;
+        const drawH = p.h;
+        const drawW = Math.round(drawH * aspect);
+        const drawX = Math.round(p.x + (p.w - drawW) * 0.5);
+        const drawY = Math.round(p.y);
+
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(chestCanvas, drawX, drawY, drawW, drawH);
+        ctx.imageSmoothingEnabled = true;
+
+        // Subtle golden glint pulse above the chest
+        const sparkle = 0.5 + 0.5 * Math.sin(game.elapsedTime * 6 + variant * 2.1);
+        ctx.fillStyle = `rgba(250, 204, 21, ${0.4 + sparkle * 0.6})`;
+        ctx.fillRect(drawX + drawW * 0.5 - 1, drawY - 5 - sparkle * 2, 2, 5);
+        ctx.fillRect(drawX + drawW * 0.5 - 3, drawY - 3 - sparkle * 2, 6, 2);
+      } else if (EXTRA_SPRITES.treasure.loaded) {
         ctx.drawImage(EXTRA_SPRITES.treasure, p.x, p.y, p.w, p.h);
       } else {
         ctx.fillStyle = "#b45309";
@@ -911,7 +933,7 @@ function drawBlindSightMask() {
 
   blurCtx.save();
   blurCtx.globalCompositeOperation = "destination-out";
-  const holeGrad = blurCtx.createRadialGradient(sx, sy, sightRadius * 0.45, sx, sy, sightRadius);
+  const holeGrad = blurCtx.createRadialGradient(sx, sy, sightRadius * 0.65, sx, sy, sightRadius);
   holeGrad.addColorStop(0, "rgba(0, 0, 0, 1)");
   holeGrad.addColorStop(1, "rgba(0, 0, 0, 0)");
   blurCtx.fillStyle = holeGrad;
