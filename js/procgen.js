@@ -22,7 +22,7 @@ function createEnemyInstance(kind, centerX, floorY, minX, maxX, transitions = 0,
       h,
       vx: 72,
       chaseSpeed: 118,
-      chargeSpeed: 295,
+      chargeSpeed: 147.5, // Reduced by 50% (was 295)
       chargeMaxDist: 340,
       chargeDistTraveled: 0,
       chargeCooldown: 1.5,
@@ -62,11 +62,11 @@ function createEnemyInstance(kind, centerX, floorY, minX, maxX, transitions = 0,
       h,
       vx: 54 * Math.min(1.5, scale),
       chaseSpeed: 96 * Math.min(1.5, scale),
-      chargeSpeed: 245 * Math.min(1.45, scale),
-      chargeMaxDist: 230,
+      chargeSpeed: 122.5 * Math.min(1.45, scale), // Reduced by 50% (was 245)
+      chargeMaxDist: 260,
       chargeDistTraveled: 0,
       chargeCooldown: 0,
-      visionRange: 330,
+      visionRange: 420,
       alerted: false,
       alertTimer: 0,
       aggroTimer: 0,
@@ -188,7 +188,6 @@ function generateProceduralScreen(runSeed, stageIndex) {
     }
   }
 
-  // 1. Carve guaranteed spine across 3x3 grid from col 0 to col 2
   let curR = randInt(0, ROWS - 1);
   let curC = 0;
   const startRow = curR;
@@ -219,7 +218,6 @@ function generateProceduralScreen(runSeed, stageIndex) {
   const exitRow = curR;
   grid[exitRow][COLS - 1].openRight = true;
 
-  // 1b. Connect EVERY remaining unvisited cell in the 3x3 grid so NO sealed pockets can ever form
   let unvisitedCount = 0;
   for (let r = 0; r < ROWS; r++) {
     for (let c = 0; c < COLS; c++) {
@@ -249,7 +247,6 @@ function generateProceduralScreen(runSeed, stageIndex) {
     unvisitedCount--;
   }
 
-  // 2. Build vertical ladder shafts for every vertical link (plus occasional bonus ladders)
   for (let r = 1; r < ROWS; r++) {
     for (let c = 0; c < COLS; c++) {
       const cell = grid[r][c];
@@ -274,7 +271,6 @@ function generateProceduralScreen(runSeed, stageIndex) {
     }
   }
 
-  // 3. Build cell floors (splitting around hatches), jumpable cover walls, and mid-cell ledges
   for (let r = 0; r < ROWS; r++) {
     for (let c = 0; c < COLS; c++) {
       const cell = grid[r][c];
@@ -303,7 +299,6 @@ function generateProceduralScreen(runSeed, stageIndex) {
         }
       }
 
-      // Jumpable low cover walls (56px high) instead of unpassable floor-to-ceiling walls
       if (c < COLS - 1 && !cell.openRight) {
         const shouldWall = isDense ? (rng() < 0.55) : (!isSpacious && rng() < 0.30);
         if (shouldWall) {
@@ -322,7 +317,6 @@ function generateProceduralScreen(runSeed, stageIndex) {
     }
   }
 
-  // 4. Guaranteed Spawn & Exit pads
   const spawnFloorY = (startRow === ROWS - 1) ? floorBaseY : Math.round(topMargin + (startRow + 1) * cellH - 16);
   solids.push({ x: wallThick, y: spawnFloorY, w: 120, h: 16, hatched: true });
   const spawnX = 46;
@@ -338,7 +332,6 @@ function generateProceduralScreen(runSeed, stageIndex) {
     dir: "right"
   };
 
-  // 5. Scaled enemies & every-10-rounds chicken spawn
   const enemyCount = Math.min(9, 3 + Math.floor(stageIndex * 0.55));
   for (let i = 0; i < enemyCount; i++) {
     const ec = randInt(1, COLS - 1);
