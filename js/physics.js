@@ -4,6 +4,13 @@
 const game = {
   state: "SELECT",
   debug: false,
+  runSeed: 0,
+  transitions: 0,
+  roomType: "START",
+  camZoom: 2.0,
+  bossArmed: false,
+  bossDefeated: false,
+  hudButtons: [],
   elapsedTime: 0,
   screenIdx: 0,
   activeScreen: null,
@@ -76,14 +83,6 @@ function damageHero(amount, knockDir) {
   }
 }
 
-function updateCamera() {
-  const targetX = Math.max(0, Math.min(game.worldW - W, hero.x + hero.w / 2 - W / 2));
-  const targetY = Math.max(0, Math.min(game.worldH - H, hero.y + hero.h / 2 - H / 2));
-  game.camX += (targetX - game.camX) * 0.16;
-  game.camY += (targetY - game.camY) * 0.16;
-}
-
-// js/physics.js (camera & aiming snippet) //
 function getActiveCamZoom() {
   if (game.state !== "PLAY" && game.state !== "VICTORY_WALK") return 1.0;
   return game.debug ? 1.0 : (game.camZoom || 2.0);
@@ -104,10 +103,6 @@ function stepHero(input, scr) {
   const WALK_SPEED = hero.stats.walkSpeed;
   const CLIMB_SPEED = hero.stats.climbSpeed;
   const JUMP_VEL = hero.stats.jumpVel;
-  // js/physics.js (mouse-to-world aim conversion) //
-  const zoom = getActiveCamZoom();
-  game.aimWorldX = mouse.screenX / zoom + game.camX + jitterX;
-  game.aimWorldY = mouse.screenY / zoom + game.camY + jitterY;
 
   if (hero.invulnTimer > 0) hero.invulnTimer = Math.max(0, hero.invulnTimer - DT);
   if (hero.gunCooldown > 0) hero.gunCooldown = Math.max(0, hero.gunCooldown - DT);
@@ -115,11 +110,12 @@ function stepHero(input, scr) {
   if (hero.hatCooldown > 0) hero.hatCooldown = Math.max(0, hero.hatCooldown - DT);
   if (hero.dropThroughTimer > 0) hero.dropThroughTimer = Math.max(0, hero.dropThroughTimer - DT);
 
+  const zoom = getActiveCamZoom();
   const jitterAmp = hero.traits.tremor ? hero.stats.aimJitterPx : 0;
   const jitterX = jitterAmp > 0 ? Math.sin(game.elapsedTime * 37) * jitterAmp + (Math.random() - 0.5) * 8 : 0;
   const jitterY = jitterAmp > 0 ? Math.cos(game.elapsedTime * 43) * jitterAmp + (Math.random() - 0.5) * 8 : 0;
-  game.aimWorldX = mouse.screenX + game.camX + jitterX;
-  game.aimWorldY = mouse.screenY + game.camY + jitterY;
+  game.aimWorldX = mouse.screenX / zoom + game.camX + jitterX;
+  game.aimWorldY = mouse.screenY / zoom + game.camY + jitterY;
 
   const shoulderX = hero.x + hero.w / 2;
   const shoulderY = hero.y + hero.h * 0.45;
@@ -204,7 +200,8 @@ function stepHero(input, scr) {
     return;
   }
 
-  if (scr.exit && rectsOverlap(hero, scr.exit)) {
+  const exitLocked = Boolean(scr.exit?.lockedUntilBossDead && !game.bossDefeated);
+  if (scr.exit && !exitLocked && rectsOverlap(hero, scr.exit)) {
     advanceToNextScreen();
     return;
   }
@@ -222,7 +219,6 @@ function stepHero(input, scr) {
     hero.animTimer = 0;
   }
 
-  // 7-round burst mode + 0.4s reload cycle
   if (hero.gunBurstRemaining === 0 && hero.gunReloadTimer <= 0 && input.gunHeld) {
     hero.gunBurstRemaining = 7;
   }
@@ -249,7 +245,6 @@ function stepHero(input, scr) {
       dropStartDist: HALF_W * hero.stats.bulletDropRatio,
       damage: 10
     });
-    // Matched to jump volume (0.06) while keeping the softer triangle tone
     SFX.beep(640, 0.036, "triangle", 0.06, 240);
   }
 
@@ -454,13 +449,20 @@ function damageEnemy(enemy, dmg, hitX, hitY) {
 
   if (enemy.hp <= 0) {
     enemy.alive = false;
-    game.score += enemy.kind === "giant" ? 800 : 250;
+    game.score += enemy.scoreValue || (enemy.kind === "giant" ? 800 : 250);
+    if (enemy.isBoss) {
+      game.bossDefeated = true;
+      game.shakeTimer = 0.45;
+      SFX.beep(440, 0.35, "triangle", 0.12, 880);
+    }
     spawnParticles(enemy.x + enemy.w / 2, enemy.y + enemy.h / 2, "#1e293b", 16, 200);
     SFX.beep(150, 0.22, "sawtooth", 0.1, 55);
   }
 }
 
 function stepEnemies(scr) {
+  const atkMult = getCompoundAttackMultiplier(game.transitions);
+
   for (const e of scr.enemies) {
     if (!e.alive) continue;
     if (e.hurtTimer > 0) e.hurtTimer = Math.max(0, e.hurtTimer - DT);
@@ -480,19 +482,29 @@ function stepEnemies(scr) {
         e.slashTimer = Math.max(0, e.slashTimer - DT);
       }
 
-      if (rectsOverlap(hero, e)) damageHero(16, hero.x < e.x ? -1 : 1);
+      if (rectsOverlap(hero, e)) {
+        damageHero(e.atk || Math.round(16 * atkMult), hero.x < e.x ? -1 : 1);
+      }
     } else if (e.kind === "giant") {
       const distToHero = Math.abs((hero.x + hero.w / 2) - (e.x + e.w / 2));
-      const sameHeight = Math.abs((hero.y + hero.h) - (e.y + e.h)) < 80;
+      const sameHeight = Math.abs((hero.y + hero.h) - (e.y + e.h)) < (e.isBoss ? 140 : 80);
+      const reach = e.isBoss ? 145 : 110;
 
       if (e.aiState === "WALK") {
         e.animTimer += DT;
-        e.x += e.vx * DT;
+        if (e.isBoss) {
+          const dir = hero.x + hero.w * 0.5 < e.x + e.w * 0.5 ? -1 : 1;
+          e.facing = dir;
+          e.x += dir * Math.abs(e.vx) * DT;
+          e.x = Math.max(e.minX, Math.min(e.maxX - e.w, e.x));
+        } else {
+          e.x += e.vx * DT;
+          if (e.x <= e.minX) { e.x = e.minX; e.vx = Math.abs(e.vx); e.facing = 1; }
+          if (e.x + e.w >= e.maxX) { e.x = e.maxX - e.w; e.vx = -Math.abs(e.vx); e.facing = -1; }
+        }
         e.weaponAngle = -0.35 + Math.sin(Math.floor(e.animTimer * 8)) * 0.12;
-        if (e.x <= e.minX) { e.x = e.minX; e.vx = Math.abs(e.vx); e.facing = 1; }
-        if (e.x + e.w >= e.maxX) { e.x = e.maxX - e.w; e.vx = -Math.abs(e.vx); e.facing = -1; }
 
-        if (distToHero < 110 && sameHeight) {
+        if (distToHero < reach && sameHeight) {
           e.facing = hero.x < e.x ? -1 : 1;
           e.aiState = "WINDUP";
           e.aiTimer = 0.38;
@@ -518,7 +530,7 @@ function stepEnemies(scr) {
           };
           if (rectsOverlap(hero, axeBox)) {
             e.struckThisSwing = true;
-            damageHero(28, e.facing);
+            damageHero(e.cleaveAtk || Math.round(28 * atkMult), e.facing);
           }
         }
         if (e.aiTimer <= 0) {
@@ -531,7 +543,9 @@ function stepEnemies(scr) {
         if (e.aiTimer <= 0) e.aiState = "WALK";
       }
 
-      if (rectsOverlap(hero, e)) damageHero(18, hero.x < e.x ? -1 : 1);
+      if (rectsOverlap(hero, e)) {
+        damageHero(e.atk || Math.round(18 * atkMult), hero.x < e.x ? -1 : 1);
+      }
     }
   }
 }
