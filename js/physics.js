@@ -14,6 +14,11 @@ const CANNON_FUSE_SEC = 1.0;                             // Explodes 1.0 sec aft
 const CANNON_AOE_RADIUS = 115;                           // Area of effect radius
 const CANNON_SPIN_RAD_PER_SEC = (3 * Math.PI * 2) / 0.8; // 3 full rotations per 0.8 sec
 
+// Start-Screen Alien Tuning
+const ALIEN_SAFE_START_SEC = 10.0;   // Holds fire for the first 10 seconds of gameplay
+const ALIEN_SIGHT_RANGE = 220;       // Fits inside the 2x zoomed camera (240px half-view)
+const ALIEN_CANNON_SPEED_MULT = 0.70; // -30% cannon projectile speed
+
 const game = {
   state: "SELECT",
   debug: false,
@@ -759,18 +764,23 @@ function stepEnemies(scr) {
     if (e.hurtTimer > 0) e.hurtTimer = Math.max(0, e.hurtTimer - DT);
 
     if (e.kind === "alien") {
+      if (game.state === "PLAY") {
+        e.activeTimer = (e.activeTimer || 0) + DT;
+      }
       const ex = e.x + e.w * 0.5;
       const hx = hero.x + hero.w * 0.5;
       const dx = hx - ex;
+      const dy = Math.abs((hero.y + hero.h) - (e.y + e.h));
       e.facing = dx < 0 ? -1 : 1;
       snapEnemyToGround(scr, e);
 
-      // Alien fires its Super Cannon ONCE at the hero; explosion kills hero immediately
-      if (!e.hasFiredCannon && game.state === "PLAY") {
-        const shouldEngage = Math.abs(dx) <= 430 || e.hp < e.maxHp;
+      // Alien holds fire for first 10s, uses shorter sight range (220px), and shoots 30% slower cannonballs
+      if (!e.hasFiredCannon && game.state === "PLAY" && e.activeTimer >= ALIEN_SAFE_START_SEC) {
+        const inSight = Math.abs(dx) <= ALIEN_SIGHT_RANGE && dy <= 110;
+        const shouldEngage = inSight || e.hp < e.maxHp;
         if (shouldEngage && !e.cannonWindingUp) {
           e.cannonWindingUp = true;
-          e.cannonWindupTimer = 0.45;
+          e.cannonWindupTimer = 0.55;
           SFX.beep(300, 0.14, "square", 0.08, 460);
         }
 
@@ -782,14 +792,15 @@ function stepEnemies(scr) {
 
             const launchX = ex + e.facing * 10;
             const launchY = e.y + 8;
-            const targetVx = Math.max(-440, Math.min(440, (hx - launchX) * 1.12));
+            const maxVx = 440 * ALIEN_CANNON_SPEED_MULT;
+            const targetVx = Math.max(-maxVx, Math.min(maxVx, (hx - launchX) * 1.12 * ALIEN_CANNON_SPEED_MULT));
 
             game.missiles.push({
               x: launchX,
               y: launchY,
               r: 11,
               vx: targetVx,
-              vy: -210,
+              vy: -210 * ALIEN_CANNON_SPEED_MULT,
               rot: 0,
               spinDir: e.facing,
               timer: 0,
