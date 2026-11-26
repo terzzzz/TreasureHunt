@@ -65,6 +65,14 @@ function generateStage001Floor(floorNum) {
   const floor = Math.max(1, Math.min(MAX_FLOORS, Math.floor(floorNum)));
   const rng = createFloorRng(floor, "001");
 
+  // Deterministic brick background template selection for Stage 001
+  let bgTemplate = "bg001";
+  if (floor % 5 === 0 || (floor >= 8 && rng.next() < 0.34)) {
+    bgTemplate = "bg003"; // Glowing rune wall on milestone & deep floors
+  } else if (rng.next() < 0.48) {
+    bgTemplate = "bg002"; // Cobweb & vine brick wall
+  }
+
   const wallT = 24;
   const ceilH = 54;
   const floorH = 34;
@@ -326,6 +334,7 @@ function generateStage001Floor(floorNum) {
   return {
     id: `stage001_floor_${String(floor).padStart(3, "0")}`,
     stageId: "001",
+    bgTemplate,
     floorNumber: floor,
     seed: rng.seed,
     pageLeft: floor * 2 + 1,
@@ -351,6 +360,7 @@ function generateStage001Boss(floorNum) {
   return {
     id: "stage001_boss_chamber",
     stageId: "001",
+    bgTemplate: "bg003",
     pageLeft: 201,
     pageRight: 202,
     heroSpawn: { x: 68, y: floorY - hero.h },
@@ -426,6 +436,7 @@ function generateStage001Vault() {
   return {
     id: "stage001_treasure_vault",
     stageId: "001",
+    bgTemplate: "bg003",
     isFinal: true,
     pageLeft: 203,
     pageRight: 204,
