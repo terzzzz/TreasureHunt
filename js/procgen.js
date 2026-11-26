@@ -135,7 +135,6 @@ function generateProceduralScreen(runSeed, stageIndex) {
   const roomSeed = (runSeed ^ Math.imul(stageIndex, 0x9E3779B1)) >>> 0;
   const rng = createSeededRng(roomSeed);
   const randInt = (min, max) => Math.floor(rng() * (max - min + 1)) + min;
-  const pick = (arr) => arr[Math.floor(rng() * arr.length)];
 
   const worldW = W;
   const worldH = H;
@@ -308,7 +307,7 @@ function generateProceduralScreen(runSeed, stageIndex) {
     dir: "right"
   };
 
-  // 5. Scaled enemies & pickups
+  // 5. Scaled enemies & every-10-rounds chicken spawn (hat is exclusive to start.jpeg's Alien)
   const enemyCount = Math.min(9, 3 + Math.floor(stageIndex * 0.55));
   for (let i = 0; i < enemyCount; i++) {
     const ec = randInt(1, COLS - 1);
@@ -328,15 +327,27 @@ function generateProceduralScreen(runSeed, stageIndex) {
     enemies.push(enemy);
   }
 
-  const pickupTypes = ["chicken", "crown", "hat"];
-  const numPickups = randInt(1, 2);
-  for (let p = 0; p < numPickups; p++) {
+  // Spawn a Chicken ONLY every 10 rounds (stageIndex 10, 20, 30...) alongside an enemy
+  if (stageIndex > 0 && stageIndex % 10 === 0 && enemies.length > 0) {
+    const hostEnemy = enemies[enemies.length - 1];
+    pickups.push({
+      type: "chicken",
+      x: Math.round(hostEnemy.x + hostEnemy.w * 0.5 - 16),
+      y: Math.round(hostEnemy.y + hostEnemy.h - 28),
+      w: 32,
+      h: 28,
+      collected: false
+    });
+  }
+
+  // Score crowns only
+  const numCrowns = randInt(1, 2);
+  for (let p = 0; p < numCrowns; p++) {
     const pc = randInt(1, COLS - 1);
     const pr = randInt(0, ROWS - 1);
     const px = Math.round(pc * cellW + cellW * 0.5 - 14);
     const py = ((pr === ROWS - 1) ? floorBaseY : Math.round(topMargin + (pr + 1) * cellH - 16)) - 30;
-    const pType = (stageIndex === 2 && p === 0) ? "hat" : pick(pickupTypes);
-    pickups.push({ type: pType, x: px, y: py, w: 28, h: 26, collected: false });
+    pickups.push({ type: "crown", x: px, y: py, w: 28, h: 26, collected: false });
   }
 
   return {
