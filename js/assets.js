@@ -26,7 +26,6 @@ function loadKeyedSprite(src, keyBg = true, eraseOriginalGun = false) {
       if (keyBg) {
         const imgData = octx.getImageData(0, 0, w, h);
         const d = imgData.data;
-        // Sample top-left corner pixel as background color (handles both pure white and #f5f1e6 paper)
         const bgR = d[0], bgG = d[1], bgB = d[2];
         for (let i = 0; i < d.length; i += 4) {
           if (d[i + 3] === 0) continue;
@@ -42,7 +41,6 @@ function loadKeyedSprite(src, keyBg = true, eraseOriginalGun = false) {
         octx.putImageData(imgData, 0, 0);
       }
     } catch (_) {
-      // If file:// security blocks getImageData, paint the erased barrel box with the sprite's paper tone
       if (eraseOriginalGun) {
         octx.fillStyle = "#f5f1e6";
         octx.fillRect(
@@ -100,9 +98,11 @@ function loadGroundEnemySprite(primarySrc, fallbackSrc, floorCutoffRatio = 0.785
     const octx = off.getContext("2d");
     octx.drawImage(img, 0, 0);
 
-    // Strip the dark ground strip at the bottom of the source image
+    // Strip the dark ground strip at the bottom of the source image if present
     const floorCutoffY = Math.floor(h * floorCutoffRatio);
-    octx.clearRect(0, floorCutoffY, w, h - floorCutoffY);
+    if (floorCutoffY < h) {
+      octx.clearRect(0, floorCutoffY, w, h - floorCutoffY);
+    }
 
     let minX = w, minY = floorCutoffY, maxX = 0, maxY = 0;
     try {
@@ -164,9 +164,10 @@ const EXTRA_SPRITES = {
   giant:    loadGroundEnemySprite("./char/giant.jpeg", "./char/giant.png", 0.785),
   giantAxe: loadOptionalImage("./char/giant_axe.png"),
   blade:    loadGroundEnemySprite("./char/blade.jpeg", "./char/blade_enemy.png", 0.785),
+  alien:    loadGroundEnemySprite("./char/alien.png", "./char/alien.jpeg", 0.90),
+  hat:      loadGroundEnemySprite("./char/hat.png", "./char/hat.jpeg", 1.0),
   chicken:  loadOptionalImage("./char/chicken.png"),
   bone:     loadOptionalImage("./char/bone.png"),
-  hat:      loadOptionalImage("./char/hat.png"),
   crown:    loadOptionalImage("./char/crown.png"),
   treasure: loadOptionalImage("./char/treasure.png")
 };
@@ -186,6 +187,27 @@ async function initStage001() {
       }
     }
   } catch (_) {}
+
+  // Guarantee the 頂帽大炮 Alien always spawns in start.jpeg (screen 0)
+  const startScr = stageManager.data.screens[0];
+  if (startScr) {
+    startScr.enemies = startScr.enemies || [];
+    startScr.pickups = (startScr.pickups || []).filter(p => p.type !== "hat");
+    if (!startScr.enemies.some(e => e.kind === "alien")) {
+      startScr.enemies.push({
+        kind: "alien",
+        name: "頂帽大炮",
+        x: 560,
+        y: 548 - 76,
+        w: 44,
+        h: 76,
+        hp: 60,
+        maxHp: 60,
+        facing: -1,
+        alive: true
+      });
+    }
+  }
 
   stageManager.bgImages = {};
   stageManager.data.screens.forEach((scr, idx) => {
@@ -232,7 +254,7 @@ const SFX = {
     this.muted = !this.muted;
     this.syncBgm();
   },
-  
+
   beep(freq, dur, type = "square", gainVal = 0.08, slideTo = null) {
     if (this.muted || !this.ctx) return;
     const deafMult = hero.traits.deaf ? (hero.stats?.sfxGainMultiplier ?? 0.30) : 1.0;
