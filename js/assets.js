@@ -12,7 +12,6 @@ function loadKeyedSprite(src, keyBg = true, eraseOriginalGun = false) {
     const octx = off.getContext("2d");
     octx.drawImage(entry.img, 0, 0);
 
-    // Erase ONLY the protruding rifle barrel to the right of the chest/knee (x >= 0.65, y 0.36..0.56)
     if (eraseOriginalGun) {
       octx.clearRect(
         Math.floor(w * 0.65),
@@ -41,7 +40,6 @@ function loadKeyedSprite(src, keyBg = true, eraseOriginalGun = false) {
           return dist < 32 || isNearWhite;
         };
 
-        // Seed flood-fill from all 4 outer edges so enclosed whites (e.g. white eyes) stay opaque
         for (let x = 0; x < w; x++) {
           const topIdx = x;
           const botIdx = (h - 1) * w + x;
@@ -80,7 +78,6 @@ function loadKeyedSprite(src, keyBg = true, eraseOriginalGun = false) {
           }
         }
 
-        // Soften 1px anti-aliased fringe touching cleared background pixels
         for (let y = 1; y < h - 1; y++) {
           for (let x = 1; x < w - 1; x++) {
             const idx = y * w + x;
@@ -119,6 +116,104 @@ function loadKeyedSprite(src, keyBg = true, eraseOriginalGun = false) {
   return entry;
 }
 
+function loadSpriteFloodFill(primarySrc, fallbackSrc) {
+  const entry = { img: new Image(), canvas: null, loaded: false };
+
+  function processImage(img) {
+    const w = img.naturalWidth;
+    const h = img.naturalHeight;
+    const off = document.createElement("canvas");
+    off.width = w;
+    off.height = h;
+    const octx = off.getContext("2d");
+    octx.drawImage(img, 0, 0);
+
+    let minX = w, minY = h, maxX = 0, maxY = 0;
+    try {
+      const imgData = octx.getImageData(0, 0, w, h);
+      const d = imgData.data;
+      const bgR = d[0], bgG = d[1], bgB = d[2];
+      const visited = new Uint8Array(w * h);
+      const queue = new Int32Array(w * h);
+      let head = 0;
+      let tail = 0;
+
+      const isBgPixel = (idx) => {
+        const p = idx * 4;
+        if (d[p + 3] === 0) return true;
+        const r = d[p], g = d[p + 1], b = d[p + 2];
+        const dist = Math.hypot(r - bgR, g - bgG, b - bgB);
+        const isNearWhite = r > 235 && g > 235 && b > 235;
+        return dist < 28 || isNearWhite;
+      };
+
+      for (let x = 0; x < w; x++) {
+        const topIdx = x;
+        const botIdx = (h - 1) * w + x;
+        if (!visited[topIdx] && isBgPixel(topIdx)) { visited[topIdx] = 1; queue[tail++] = topIdx; }
+        if (!visited[botIdx] && isBgPixel(botIdx)) { visited[botIdx] = 1; queue[tail++] = botIdx; }
+      }
+      for (let y = 1; y < h - 1; y++) {
+        const leftIdx = y * w;
+        const rightIdx = y * w + (w - 1);
+        if (!visited[leftIdx] && isBgPixel(leftIdx)) { visited[leftIdx] = 1; queue[tail++] = leftIdx; }
+        if (!visited[rightIdx] && isBgPixel(rightIdx)) { visited[rightIdx] = 1; queue[tail++] = rightIdx; }
+      }
+
+      while (head < tail) {
+        const idx = queue[head++];
+        d[idx * 4 + 3] = 0;
+        const x = idx % w;
+        const y = (idx - x) / w;
+        if (x > 0 && !visited[idx - 1] && isBgPixel(idx - 1)) { visited[idx - 1] = 1; queue[tail++] = idx - 1; }
+        if (x + 1 < w && !visited[idx + 1] && isBgPixel(idx + 1)) { visited[idx + 1] = 1; queue[tail++] = idx + 1; }
+        if (y > 0 && !visited[idx - w] && isBgPixel(idx - w)) { visited[idx - w] = 1; queue[tail++] = idx - w; }
+        if (y + 1 < h && !visited[idx + w] && isBgPixel(idx + w)) { visited[idx + w] = 1; queue[tail++] = idx + w; }
+      }
+
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          const idx = y * w + x;
+          if (!visited[idx] && d[idx * 4 + 3] > 0) {
+            if (x < minX) minX = x;
+            if (x > maxX) maxX = x;
+            if (y < minY) minY = y;
+            if (y > maxY) maxY = y;
+          }
+        }
+      }
+
+      octx.putImageData(imgData, 0, 0);
+
+      if (maxX > minX && maxY > minY) {
+        const cropW = maxX - minX + 1;
+        const cropH = maxY - minY + 1;
+        const cropped = document.createElement("canvas");
+        cropped.width = cropW;
+        cropped.height = cropH;
+        cropped.getContext("2d").drawImage(off, minX, minY, cropW, cropH, 0, 0, cropW, cropH);
+        entry.canvas = cropped;
+        entry.loaded = true;
+        return;
+      }
+    } catch (_) {}
+
+    entry.canvas = off;
+    entry.loaded = true;
+  }
+
+  entry.img.onload = () => processImage(entry.img);
+  entry.img.onerror = () => {
+    if (fallbackSrc && entry.img.src.indexOf(fallbackSrc) === -1) {
+      entry.img.src = fallbackSrc;
+    } else {
+      entry.loaded = false;
+    }
+  };
+  entry.img.src = primarySrc;
+  return entry;
+}
+
 function loadOptionalImage(src) {
   const img = new Image();
   img.loaded = false;
@@ -137,7 +232,6 @@ const CHAR_LAYERS = {
   asthma:     loadKeyedSprite("./char/asthma.jpeg", true, true)
 };
 
-// Disjoint facial zones so white eyes (blind) and hearing aid (deaf) never overwrite each other
 const TRAIT_BODY_ZONES = {
   blind:      [0.505, 0.14, 0.125, 0.09],
   deaf:       [0.380, 0.14, 0.125, 0.13],
@@ -220,16 +314,52 @@ function loadGroundEnemySprite(primarySrc, fallbackSrc, floorCutoffRatio = 0.785
 }
 
 const EXTRA_SPRITES = {
-  giant:    loadGroundEnemySprite("./char/giant.jpeg", "./char/giant.png", 0.785),
-  giantAxe: loadOptionalImage("./char/giant_axe.png"),
-  blade:    loadGroundEnemySprite("./char/blade.jpeg", "./char/blade_enemy.png", 0.785),
-  alien:    loadGroundEnemySprite("./char/alien.png", "./char/alien.jpeg", 0.90),
-  hat:      loadGroundEnemySprite("./char/hat.png", "./char/hat.jpeg", 1.0),
-  chicken:  loadOptionalImage("./char/chicken.png"),
-  bone:     loadOptionalImage("./char/bone.png"),
-  crown:    loadOptionalImage("./char/crown.png"),
-  treasure: loadOptionalImage("./char/treasure.png")
+  giant:      loadGroundEnemySprite("./char/giant.jpeg", "./char/giant.png", 0.785),
+  giantAxe:   loadOptionalImage("./char/giant_axe.png"),
+  blade:      loadGroundEnemySprite("./char/blade.jpeg", "./char/blade_enemy.png", 0.785),
+  alien:      loadGroundEnemySprite("./char/alien.png", "./char/alien.jpeg", 0.90),
+  hat:        loadGroundEnemySprite("./char/hat.png", "./char/hat.jpeg", 1.0),
+  cannonball: loadSpriteFloodFill("./char/cannonball.png", "./char/cannonball.jpeg"),
+  chicken:    loadOptionalImage("./char/chicken.png"),
+  bone:       loadOptionalImage("./char/bone.png"),
+  crown:      loadOptionalImage("./char/crown.png"),
+  treasure:   loadOptionalImage("./char/treasure.png")
 };
+
+function ensureStartScreenAlien(scr) {
+  if (!scr) return;
+  scr.enemies = (scr.enemies || []).filter(e => e.kind !== "blade" && e.kind !== "alien");
+  scr.pickups = (scr.pickups || []).filter(p => p.type !== "hat");
+
+  const alienX = 560;
+  let floorY = (typeof H === "number" ? H - 34 : 548);
+  if (Array.isArray(scr.solids)) {
+    const floorSolid = scr.solids.find(s => s.w > 80 && s.y > 120 && alienX >= s.x && alienX <= s.x + s.w);
+    if (floorSolid) floorY = floorSolid.y;
+  }
+
+  scr.enemies.push({
+    kind: "alien",
+    name: "頂帽大炮",
+    x: alienX,
+    y: floorY - 76,
+    w: 44,
+    h: 76,
+    hp: 60,
+    maxHp: 60,
+    facing: -1,
+    alive: true
+  });
+  scr._alienSpawned = true;
+}
+
+// Patch default start screen synchronously before async stage.json fetch completes
+if (typeof STAGE_001_DEFAULT !== "undefined" && Array.isArray(STAGE_001_DEFAULT.screens)) {
+  ensureStartScreenAlien(STAGE_001_DEFAULT.screens[0]);
+}
+if (typeof stageManager !== "undefined" && stageManager.data && Array.isArray(stageManager.data.screens)) {
+  ensureStartScreenAlien(stageManager.data.screens[0]);
+}
 
 async function initStage001() {
   stageManager.stageFolder = "./Stages/001";
@@ -247,24 +377,11 @@ async function initStage001() {
     }
   } catch (_) {}
 
-  const startScr = stageManager.data.screens[0];
-  if (startScr) {
-    startScr.enemies = startScr.enemies || [];
-    startScr.pickups = (startScr.pickups || []).filter(p => p.type !== "hat");
-    if (!startScr.enemies.some(e => e.kind === "alien")) {
-      startScr.enemies.push({
-        kind: "alien",
-        name: "頂帽大炮",
-        x: 560,
-        y: 548 - 76,
-        w: 44,
-        h: 76,
-        hp: 60,
-        maxHp: 60,
-        facing: -1,
-        alive: true
-      });
-    }
+  if (stageManager.data && Array.isArray(stageManager.data.screens)) {
+    ensureStartScreenAlien(stageManager.data.screens[0]);
+  }
+  if (typeof game !== "undefined" && game.activeScreen && game.roomType === "START" && game.transitions === 0 && !hero.hasMissileHat) {
+    ensureStartScreenAlien(game.activeScreen);
   }
 
   stageManager.bgImages = {};
