@@ -348,17 +348,25 @@ function ensureStartScreenAlien(scr) {
     hp: 60,
     maxHp: 60,
     facing: -1,
+    hasFiredCannon: false,
+    cannonWindingUp: false,
+    cannonWindupTimer: 0,
     alive: true
   });
   scr._alienSpawned = true;
 }
 
-// Patch default start screen synchronously before async stage.json fetch completes
-if (typeof STAGE_001_DEFAULT !== "undefined" && Array.isArray(STAGE_001_DEFAULT.screens)) {
-  ensureStartScreenAlien(STAGE_001_DEFAULT.screens[0]);
+if (typeof STAGE_001_DEFAULT !== "undefined") {
+  STAGE_001_DEFAULT.stageName = "RUIN CAVE";
+  if (Array.isArray(STAGE_001_DEFAULT.screens)) {
+    ensureStartScreenAlien(STAGE_001_DEFAULT.screens[0]);
+  }
 }
-if (typeof stageManager !== "undefined" && stageManager.data && Array.isArray(stageManager.data.screens)) {
-  ensureStartScreenAlien(stageManager.data.screens[0]);
+if (typeof stageManager !== "undefined" && stageManager.data) {
+  stageManager.data.stageName = "RUIN CAVE";
+  if (Array.isArray(stageManager.data.screens)) {
+    ensureStartScreenAlien(stageManager.data.screens[0]);
+  }
 }
 
 async function initStage001() {
@@ -371,14 +379,17 @@ async function initStage001() {
         stageManager.data = {
           ...STAGE_001_DEFAULT,
           ...parsed,
-          stageName: parsed.stageName || parsed.title || STAGE_001_DEFAULT.stageName
+          stageName: parsed.stageName || parsed.title || "RUIN CAVE"
         };
       }
     }
   } catch (_) {}
 
-  if (stageManager.data && Array.isArray(stageManager.data.screens)) {
-    ensureStartScreenAlien(stageManager.data.screens[0]);
+  if (stageManager.data) {
+    if (!stageManager.data.stageName) stageManager.data.stageName = "RUIN CAVE";
+    if (Array.isArray(stageManager.data.screens)) {
+      ensureStartScreenAlien(stageManager.data.screens[0]);
+    }
   }
   if (typeof game !== "undefined" && game.activeScreen && game.roomType === "START" && game.transitions === 0 && !hero.hasMissileHat) {
     ensureStartScreenAlien(game.activeScreen);
