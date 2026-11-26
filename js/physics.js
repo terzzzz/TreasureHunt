@@ -8,7 +8,7 @@ const GUN_RELOAD_TIME = 0.68;     // Seconds pause between bursts
 const BULLET_SPEED_MULT = 0.80;   // -20% bullet speed
 
 // Super Cannon (頂帽大炮) Tuning
-const CANNON_COOLDOWN = 60.0;                        // 60 seconds cooldown
+const CANNON_ROUNDS_PER_ROOM = 2;                    // Limited to 2 rounds per room
 const CANNON_DAMAGE = 200;                           // 200 AoE damage
 const CANNON_FUSE_SEC = 1.0;                         // Explodes 1.0 sec after shot
 const CANNON_AOE_RADIUS = 115;                       // Area of effect radius
@@ -27,6 +27,7 @@ const game = {
   elapsedTime: 0,
   screenIdx: 0,
   activeScreen: null,
+  _cannonRoomRef: null,
   worldW: W,
   worldH: H,
   stageTimer: 600,
@@ -52,7 +53,7 @@ const hero = {
   hp: 100, maxHp: 100, invulnTimer: 0,
   gunCooldown: 0, gunBurstRemaining: 0, gunReloadTimer: 0,
   bones: 0,
-  hasMissileHat: false, hatCooldown: 0, hatMaxCooldown: CANNON_COOLDOWN,
+  hasMissileHat: false, hatAmmo: 0, hatMaxAmmo: CANNON_ROUNDS_PER_ROOM,
   asthma: 0, asthmaStun: 0, asthmaPending: false,
   animState: "IDLE", animTimer: 0,
   traits: { blind: true, prosthesis: false, deaf: false, tremor: false, asthma: false },
@@ -119,12 +120,16 @@ function stepHero(input, scr) {
   const CLIMB_SPEED = hero.stats.climbSpeed;
   const JUMP_VEL = hero.stats.jumpVel;
 
-  hero.hatMaxCooldown = CANNON_COOLDOWN;
+  // Refill Super Cannon ammo to 2 rounds whenever entering a new room
+  if (game._cannonRoomRef !== scr) {
+    game._cannonRoomRef = scr;
+    hero.hatMaxAmmo = CANNON_ROUNDS_PER_ROOM;
+    hero.hatAmmo = hero.hasMissileHat ? CANNON_ROUNDS_PER_ROOM : 0;
+  }
 
   if (hero.invulnTimer > 0) hero.invulnTimer = Math.max(0, hero.invulnTimer - DT);
   if (hero.gunCooldown > 0) hero.gunCooldown = Math.max(0, hero.gunCooldown - DT);
   if (hero.gunReloadTimer > 0) hero.gunReloadTimer = Math.max(0, hero.gunReloadTimer - DT);
-  if (hero.hatCooldown > 0) hero.hatCooldown = Math.max(0, hero.hatCooldown - DT);
   if (hero.dropThroughTimer > 0) hero.dropThroughTimer = Math.max(0, hero.dropThroughTimer - DT);
 
   const zoom = getActiveCamZoom();
@@ -291,11 +296,11 @@ function stepHero(input, scr) {
     SFX.beep(440, 0.12, "triangle", 0.09, 680);
   }
 
-  // Super Cannon (頂帽大炮): 60s cooldown, bouncing/rolling physics ball, explodes after 1.0s for 200 AoE damage
-  if (input.hatPressed && hero.hasMissileHat && hero.hatCooldown <= 0) {
+  // Super Cannon (頂帽大炮): Limited to 2 rounds per room, bouncing/rolling physics ball, explodes after 1.0s for 200 AoE damage
+  if (input.hatPressed && hero.hasMissileHat && hero.hatAmmo > 0) {
     const dirX = Math.cos(hero.aimAngle);
     const dirY = Math.sin(hero.aimAngle);
-    hero.hatCooldown = CANNON_COOLDOWN;
+    hero.hatAmmo--;
     const launchSpeed = 420;
     game.missiles.push({
       x: shoulderX + dirX * 12,
@@ -308,7 +313,8 @@ function stepHero(input, scr) {
       timer: 0,
       fuse: CANNON_FUSE_SEC,
       damage: CANNON_DAMAGE,
-      splashRadius: CANNON_AOE_RADIUS
+      splashRadius: CANNON_AOE_RADIUS,
+      fromEnemy: false
     });
     spawnParticles(shoulderX + dirX * 12, hero.y - 4, "#facc15", 8, 120);
     SFX.beep(190, 0.24, "sawtooth", 0.12, 85);
@@ -382,6 +388,22 @@ function detonateCannonBall(m, scr) {
   });
   SFX.beep(95, 0.34, "sawtooth", 0.16, 36);
 
+  if (m.fromEnemy) {
+    // Alien's cannonball kills the hero immediately if caught inside the explosion radius
+    const closestX = Math.max(hero.x, Math.min(m.x, hero.x + hero.w));
+    const closestY = Math.max(hero.y, Math.min(m.y, hero.y + hero.h));
+    const distToHero = Math.hypot(m.x - closestX, m.y - closestY);
+    if (distToHero <= m.splashRadius && game.state === "PLAY") {
+      hero.invulnTimer = 0;
+      hero.hp = 0;
+      spawnParticles(hero.x + hero.w / 2, hero.y + hero.h / 2, "#dc2626", 24, 240);
+      SFX.beep(110, 0.35, "sawtooth", 0.15, 45);
+      game.state = "GAMEOVER";
+      SFX.syncBgm();
+    }
+    return;
+  }
+
   for (const e of scr.enemies) {
     if (!e.alive) continue;
     const closestX = Math.max(e.x, Math.min(m.x, e.x + e.w));
@@ -407,8 +429,8 @@ function stepProjectilesAndPickups(scr) {
         SFX.beep(520, 0.18, "triangle", 0.1, 880);
       } else if (p.type === "hat") {
         hero.hasMissileHat = true;
-        hero.hatMaxCooldown = CANNON_COOLDOWN;
-        hero.hatCooldown = 0;
+        hero.hatMaxAmmo = CANNON_ROUNDS_PER_ROOM;
+        hero.hatAmmo = CANNON_ROUNDS_PER_ROOM;
         game.score += 500;
         spawnParticles(p.x + p.w / 2, p.y + p.h / 2, "#f5c518", 14, 160);
         SFX.beep(440, 0.25, "square", 0.1, 990);
@@ -559,15 +581,24 @@ function stepProjectilesAndPickups(scr) {
       }
     }
 
-    // Bounce off enemies without prematurely detonating before 1.0s
-    for (const e of scr.enemies) {
-      if (!e.alive) continue;
-      if (m.x + r > e.x && m.x - r < e.x + e.w && m.y + r > e.y && m.y - r < e.y + e.h) {
-        const bounceDir = (m.x < e.x + e.w * 0.5) ? -1 : 1;
+    // Bounce off entities without prematurely detonating before 1.0s
+    if (m.fromEnemy) {
+      if (m.x + r > hero.x && m.x - r < hero.x + hero.w && m.y + r > hero.y && m.y - r < hero.y + hero.h) {
+        const bounceDir = (m.x < hero.x + hero.w * 0.5) ? -1 : 1;
         m.vx = bounceDir * Math.max(120, Math.abs(m.vx) * 0.55);
         m.vy = Math.min(m.vy, -140);
         m.spinDir = bounceDir;
-        break;
+      }
+    } else {
+      for (const e of scr.enemies) {
+        if (!e.alive) continue;
+        if (m.x + r > e.x && m.x - r < e.x + e.w && m.y + r > e.y && m.y - r < e.y + e.h) {
+          const bounceDir = (m.x < e.x + e.w * 0.5) ? -1 : 1;
+          m.vx = bounceDir * Math.max(120, Math.abs(m.vx) * 0.55);
+          m.vy = Math.min(m.vy, -140);
+          m.spinDir = bounceDir;
+          break;
+        }
       }
     }
 
@@ -705,8 +736,48 @@ function stepEnemies(scr) {
     if (e.kind === "alien") {
       const ex = e.x + e.w * 0.5;
       const hx = hero.x + hero.w * 0.5;
-      e.facing = hx < ex ? -1 : 1;
+      const dx = hx - ex;
+      e.facing = dx < 0 ? -1 : 1;
       snapEnemyToGround(scr, e);
+
+      // Alien fires its Super Cannon ONCE at the hero; explosion kills hero immediately
+      if (!e.hasFiredCannon && game.state === "PLAY") {
+        const shouldEngage = Math.abs(dx) <= 430 || e.hp < e.maxHp;
+        if (shouldEngage && !e.cannonWindingUp) {
+          e.cannonWindingUp = true;
+          e.cannonWindupTimer = 0.45;
+          SFX.beep(300, 0.14, "square", 0.08, 460);
+        }
+
+        if (e.cannonWindingUp) {
+          e.cannonWindupTimer -= DT;
+          if (e.cannonWindupTimer <= 0) {
+            e.cannonWindingUp = false;
+            e.hasFiredCannon = true;
+
+            const launchX = ex + e.facing * 10;
+            const launchY = e.y + 8;
+            const targetVx = Math.max(-440, Math.min(440, (hx - launchX) * 1.12));
+
+            game.missiles.push({
+              x: launchX,
+              y: launchY,
+              r: 11,
+              vx: targetVx,
+              vy: -210,
+              rot: 0,
+              spinDir: e.facing,
+              timer: 0,
+              fuse: CANNON_FUSE_SEC,
+              damage: CANNON_DAMAGE,
+              splashRadius: CANNON_AOE_RADIUS,
+              fromEnemy: true
+            });
+            spawnParticles(launchX, launchY, "#ef4444", 12, 150);
+            SFX.beep(175, 0.26, "sawtooth", 0.13, 75);
+          }
+        }
+      }
       continue;
     }
 
