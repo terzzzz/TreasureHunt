@@ -732,9 +732,10 @@ function drawProjectilesAndAimMark() {
 function drawBlindSightMask() {
   if (!hero.traits.blind || game.debug || game.state === "VICTORY_WALK") return;
 
-  const sx = hero.x + hero.w / 2 - game.camX;
-  const sy = hero.y + hero.h * 0.45 - game.camY;
-  const sightRadius = hero.stats?.sightRadius ?? 310;
+  const zoom = typeof getActiveCamZoom === "function" ? getActiveCamZoom() : 1.0;
+  const sx = (hero.x + hero.w / 2 - game.camX) * zoom;
+  const sy = (hero.y + hero.h * 0.45 - game.camY) * zoom;
+  const sightRadius = (hero.stats?.sightRadius ?? 310) * zoom;
 
   blurCtx.save();
   blurCtx.clearRect(0, 0, W, H);
@@ -812,7 +813,9 @@ function drawHUD() {
 
   if (game.debug && game.activeScreen) {
     const scr = game.activeScreen;
+    const zoom = typeof getActiveCamZoom === "function" ? getActiveCamZoom() : 1.0;
     ctx.save();
+    ctx.scale(zoom, zoom);
     ctx.translate(-Math.round(game.camX), -Math.round(game.camY));
 
     ctx.strokeStyle = "rgba(37, 99, 235, 0.45)";
@@ -856,7 +859,8 @@ function drawHUD() {
     ctx.fillRect(10, H - 34, W - 20, 26);
     ctx.fillStyle = "#4ade80";
     ctx.font = "12px monospace";
-    const statusText = debugDrag.lastJson || "DRAG BOX -> [B]Solid [L]Ladder [O]OneWay [Z]Undo";
+    const seedLabel = game.runSeed != null ? `SEED:${game.runSeed} | ` : "";
+    const statusText = debugDrag.lastJson || `${seedLabel}DRAG BOX -> [B]Solid [L]Ladder [O]OneWay [Z]Undo`;
     ctx.fillText(statusText, 18, H - 16);
   }
 
@@ -872,7 +876,8 @@ function drawHUD() {
     ctx.fillText(`${hero.identity.zhName} — ${hero.identity.enName} (${hero.identity.anchors}) [${setup.difficulty}]`, W / 2, H / 2 + 4);
     ctx.fillStyle = "#f8fafc";
     ctx.font = "17px monospace";
-    ctx.fillText(`FINAL SCORE: ${game.score}  |  [R] RETRY  |  [ESC] CHANGE HUNTER`, W / 2, H / 2 + 46);
+    const seedTag = game.runSeed != null ? `  |  SEED: ${game.runSeed}` : "";
+    ctx.fillText(`FINAL SCORE: ${game.score}${seedTag}  |  [R] RETRY  |  [ESC] CHANGE HUNTER`, W / 2, H / 2 + 46);
     ctx.textAlign = "left";
   }
 }
