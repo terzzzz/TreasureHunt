@@ -7,6 +7,13 @@ const GUN_SHOT_INTERVAL = 0.095;  // Seconds between shots inside a burst
 const GUN_RELOAD_TIME = 0.68;     // Seconds pause between bursts
 const BULLET_SPEED_MULT = 0.80;   // -20% bullet speed
 
+// Super Cannon (頂帽大炮) Tuning
+const CANNON_COOLDOWN = 60.0;                        // 60 seconds cooldown
+const CANNON_DAMAGE = 200;                           // 200 AoE damage
+const CANNON_FUSE_SEC = 1.0;                         // Explodes 1.0 sec after shot
+const CANNON_AOE_RADIUS = 115;                       // Area of effect radius
+const CANNON_SPIN_RAD_PER_SEC = (3 * Math.PI * 2) / 0.8; // 3 full rotations per 0.8 sec
+
 const game = {
   state: "SELECT",
   debug: false,
@@ -34,7 +41,8 @@ const game = {
   bullets: [],
   bones: [],
   missiles: [],
-  particles: []
+  particles: [],
+  shockwaves: []
 };
 
 const hero = {
@@ -44,7 +52,7 @@ const hero = {
   hp: 100, maxHp: 100, invulnTimer: 0,
   gunCooldown: 0, gunBurstRemaining: 0, gunReloadTimer: 0,
   bones: 0,
-  hasMissileHat: false, hatCooldown: 0, hatMaxCooldown: 4.5,
+  hasMissileHat: false, hatCooldown: 0, hatMaxCooldown: CANNON_COOLDOWN,
   asthma: 0, asthmaStun: 0, asthmaPending: false,
   animState: "IDLE", animTimer: 0,
   traits: { blind: true, prosthesis: false, deaf: false, tremor: false, asthma: false },
@@ -110,6 +118,8 @@ function stepHero(input, scr) {
   const WALK_SPEED = hero.stats.walkSpeed;
   const CLIMB_SPEED = hero.stats.climbSpeed;
   const JUMP_VEL = hero.stats.jumpVel;
+
+  hero.hatMaxCooldown = CANNON_COOLDOWN;
 
   if (hero.invulnTimer > 0) hero.invulnTimer = Math.max(0, hero.invulnTimer - DT);
   if (hero.gunCooldown > 0) hero.gunCooldown = Math.max(0, hero.gunCooldown - DT);
@@ -281,17 +291,27 @@ function stepHero(input, scr) {
     SFX.beep(440, 0.12, "triangle", 0.09, 680);
   }
 
+  // Super Cannon (頂帽大炮): 60s cooldown, bouncing/rolling physics ball, explodes after 1.0s for 200 AoE damage
   if (input.hatPressed && hero.hasMissileHat && hero.hatCooldown <= 0) {
     const dirX = Math.cos(hero.aimAngle);
     const dirY = Math.sin(hero.aimAngle);
-    hero.hatCooldown = hero.hatMaxCooldown;
+    hero.hatCooldown = CANNON_COOLDOWN;
+    const launchSpeed = 420;
     game.missiles.push({
-      x: shoulderX, y: hero.y - 4,
-      vx: dirX * 520, vy: dirY * 520 - 70,
-      targetVx: dirX * 560, targetVy: dirY * 560,
-      timer: 0, damage: 110, splashRadius: 74
+      x: shoulderX + dirX * 12,
+      y: hero.y - 4,
+      r: 11,
+      vx: dirX * launchSpeed + hero.vx * 0.25,
+      vy: dirY * launchSpeed - 140,
+      rot: 0,
+      spinDir: dirX >= 0 ? 1 : -1,
+      timer: 0,
+      fuse: CANNON_FUSE_SEC,
+      damage: CANNON_DAMAGE,
+      splashRadius: CANNON_AOE_RADIUS
     });
-    SFX.beep(260, 0.22, "sawtooth", 0.1, 720);
+    spawnParticles(shoulderX + dirX * 12, hero.y - 4, "#facc15", 8, 120);
+    SFX.beep(190, 0.24, "sawtooth", 0.12, 85);
   }
 }
 
@@ -347,6 +367,32 @@ function resolveCollisions(scr, stunned) {
   }
 }
 
+function detonateCannonBall(m, scr) {
+  game.shakeTimer = 0.30;
+  spawnParticles(m.x, m.y, "#ef4444", 24, 260);
+  spawnParticles(m.x, m.y, "#facc15", 16, 210);
+  spawnParticles(m.x, m.y, "#334155", 12, 160);
+  game.shockwaves.push({
+    x: m.x,
+    y: m.y,
+    radius: 14,
+    maxRadius: m.splashRadius,
+    life: 0.28,
+    maxLife: 0.28
+  });
+  SFX.beep(95, 0.34, "sawtooth", 0.16, 36);
+
+  for (const e of scr.enemies) {
+    if (!e.alive) continue;
+    const closestX = Math.max(e.x, Math.min(m.x, e.x + e.w));
+    const closestY = Math.max(e.y, Math.min(m.y, e.y + e.h));
+    const dist = Math.hypot(m.x - closestX, m.y - closestY);
+    if (dist <= m.splashRadius) {
+      damageEnemy(e, m.damage, m.x, m.y);
+    }
+  }
+}
+
 function stepProjectilesAndPickups(scr) {
   for (const p of scr.pickups) {
     if (p.collected) continue;
@@ -361,6 +407,7 @@ function stepProjectilesAndPickups(scr) {
         SFX.beep(520, 0.18, "triangle", 0.1, 880);
       } else if (p.type === "hat") {
         hero.hasMissileHat = true;
+        hero.hatMaxCooldown = CANNON_COOLDOWN;
         hero.hatCooldown = 0;
         game.score += 500;
         spawnParticles(p.x + p.w / 2, p.y + p.h / 2, "#f5c518", 14, 160);
@@ -436,33 +483,96 @@ function stepProjectilesAndPickups(scr) {
     if (hitEnemy) game.bones.splice(i, 1);
   }
 
+  // Physics bouncing & rolling cannonball (3 rotations per 0.8s, explodes after 1.0s, never drops down ladders)
   for (let i = game.missiles.length - 1; i >= 0; i--) {
     const m = game.missiles[i];
+    const r = m.r || 11;
     m.timer += DT;
-    if (m.timer > 0.12) {
-      m.vx += (m.targetVx - m.vx) * 0.25;
-      m.vy += (m.targetVy - m.vy) * 0.25;
+    m.rot += m.spinDir * CANNON_SPIN_RAD_PER_SEC * DT;
+
+    if (Math.random() < 0.65) {
+      spawnParticles(m.x, m.y - r * 0.6, "#fb923c", 1, 55);
     }
+
+    // Horizontal step & wall bounce
     m.x += m.vx * DT;
-    m.y += m.vy * DT;
+    if (m.x - r < 24) {
+      m.x = 24 + r;
+      m.vx = Math.abs(m.vx) * 0.65;
+      m.spinDir = 1;
+    } else if (m.x + r > game.worldW - 24) {
+      m.x = game.worldW - 24 - r;
+      m.vx = -Math.abs(m.vx) * 0.65;
+      m.spinDir = -1;
+    }
 
-    if (m.timer % 0.03 < DT) spawnParticles(m.x, m.y, "#fb923c", 2, 40);
-
-    const outOfWorld = m.x < 0 || m.x > game.worldW || m.y < 0 || m.y > game.worldH;
-    const hitSolid = scr.solids.some(s => m.x >= s.x && m.x <= s.x + s.w && m.y >= s.y && m.y <= s.y + s.h);
-    const hitEnemy = scr.enemies.some(e => e.alive && m.x >= e.x && m.x <= e.x + e.w && m.y >= e.y && m.y <= e.y + e.h);
-
-    if (outOfWorld || hitSolid || hitEnemy) {
-      game.shakeTimer = 0.22;
-      spawnParticles(m.x, m.y, "#ef4444", 18, 230);
-      SFX.beep(110, 0.26, "sawtooth", 0.14, 42);
-      for (const e of scr.enemies) {
-        if (!e.alive) continue;
-        const dist = Math.hypot(e.x + e.w / 2 - m.x, e.y + e.h / 2 - m.y);
-        if (dist <= m.splashRadius + e.w * 0.5) {
-          damageEnemy(e, m.damage, m.x, m.y);
+    for (const s of scr.solids) {
+      if (m.y + r > s.y + 2 && m.y - r < s.y + s.h - 2) {
+        if (m.vx > 0 && m.x + r > s.x && m.x - r < s.x) {
+          m.x = s.x - r;
+          m.vx = -Math.abs(m.vx) * 0.65;
+          m.spinDir = -1;
+          SFX.beep(240, 0.04, "triangle", 0.05, 160);
+        } else if (m.vx < 0 && m.x - r < s.x + s.w && m.x + r > s.x + s.w) {
+          m.x = s.x + s.w + r;
+          m.vx = Math.abs(m.vx) * 0.65;
+          m.spinDir = 1;
+          SFX.beep(240, 0.04, "triangle", 0.05, 160);
         }
       }
+    }
+
+    // Gravity & vertical bounce / roll (treats both solids AND oneWay ladder hatches as solid ground)
+    const prevBottom = m.y + r;
+    m.vy = Math.min(m.vy + 1240 * DT, 820);
+    m.y += m.vy * DT;
+
+    let landedSurfaceY = null;
+    for (const s of scr.solids) {
+      if (m.x + r > s.x && m.x - r < s.x + s.w) {
+        if (m.vy >= 0 && prevBottom <= s.y + 10 && m.y + r >= s.y) {
+          if (landedSurfaceY === null || s.y < landedSurfaceY) landedSurfaceY = s.y;
+        } else if (m.vy < 0 && m.y - r <= s.y + s.h && m.y + r > s.y + s.h) {
+          m.y = s.y + s.h + r;
+          m.vy = Math.abs(m.vy) * 0.5;
+        }
+      }
+    }
+
+    if (m.vy >= 0) {
+      for (const p of scr.oneWay) {
+        if (m.x + r > p.x && m.x - r < p.x + p.w && prevBottom <= p.y + 10 && m.y + r >= p.y) {
+          if (landedSurfaceY === null || p.y < landedSurfaceY) landedSurfaceY = p.y;
+        }
+      }
+    }
+
+    if (landedSurfaceY !== null) {
+      m.y = landedSurfaceY - r;
+      if (m.vy > 125) {
+        m.vy = -m.vy * 0.54;
+        m.vx *= 0.86;
+        SFX.beep(210, 0.04, "triangle", 0.05, 140);
+      } else {
+        m.vy = 0;
+        m.vx *= Math.pow(0.42, DT);
+      }
+    }
+
+    // Bounce off enemies without prematurely detonating before 1.0s
+    for (const e of scr.enemies) {
+      if (!e.alive) continue;
+      if (m.x + r > e.x && m.x - r < e.x + e.w && m.y + r > e.y && m.y - r < e.y + e.h) {
+        const bounceDir = (m.x < e.x + e.w * 0.5) ? -1 : 1;
+        m.vx = bounceDir * Math.max(120, Math.abs(m.vx) * 0.55);
+        m.vy = Math.min(m.vy, -140);
+        m.spinDir = bounceDir;
+        break;
+      }
+    }
+
+    if (m.timer >= (m.fuse || CANNON_FUSE_SEC)) {
+      detonateCannonBall(m, scr);
       game.missiles.splice(i, 1);
     }
   }
@@ -499,7 +609,6 @@ function hasGiantLineOfSight(scr, g) {
   const closeBehind = absDx <= 110;
   if (!inFront && !closeBehind) return false;
 
-  // Only vertical barrier walls block line of sight (skip wide horizontal floor slabs)
   const eyeY = g.y + g.h * 0.30;
   const minRayX = Math.min(gx, hx);
   const maxRayX = Math.max(gx, hx);
@@ -583,6 +692,10 @@ function damageEnemy(enemy, dmg, hitX, hitY) {
 }
 
 function stepEnemies(scr) {
+  if (game.roomType === "START" && game.transitions === 0 && !hero.hasMissileHat && !scr._alienSpawned) {
+    if (typeof ensureStartScreenAlien === "function") ensureStartScreenAlien(scr);
+  }
+
   const atkMult = getCompoundAttackMultiplier(game.transitions);
 
   for (const e of scr.enemies) {
@@ -593,6 +706,7 @@ function stepEnemies(scr) {
       const ex = e.x + e.w * 0.5;
       const hx = hero.x + hero.w * 0.5;
       e.facing = hx < ex ? -1 : 1;
+      snapEnemyToGround(scr, e);
       continue;
     }
 
@@ -803,5 +917,12 @@ function stepParticles() {
     p.x += p.vx * DT;
     p.y += p.vy * DT;
     if (p.life <= 0) game.particles.splice(i, 1);
+  }
+  for (let i = game.shockwaves.length - 1; i >= 0; i--) {
+    const sw = game.shockwaves[i];
+    sw.life -= DT;
+    const progress = 1 - Math.max(0, sw.life / sw.maxLife);
+    sw.radius = 14 + (sw.maxRadius - 14) * progress;
+    if (sw.life <= 0) game.shockwaves.splice(i, 1);
   }
 }
