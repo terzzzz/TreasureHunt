@@ -17,10 +17,18 @@ function resolveScreenBackgroundImage(scr) {
     const byId = stageManager.bgImages[scr.id];
     if (byId && byId.loaded) return byId;
   }
-  const tplKey = scr.bgTemplate || (scr.stageId === "001" || game.stageId === "001" ? "bg001" : null);
-  if (tplKey && typeof STAGE_001_BG_TEMPLATES !== "undefined") {
-    const tplImg = STAGE_001_BG_TEMPLATES[tplKey];
+  if (typeof STAGE_001_BG_TEMPLATES !== "undefined") {
+    const tplKey = scr.bgTemplate || "bg001";
+    const tplImg = STAGE_001_BG_TEMPLATES[tplKey] || STAGE_001_BG_TEMPLATES.bg001;
     if (tplImg && tplImg.loaded) return tplImg;
+    for (const img of Object.values(STAGE_001_BG_TEMPLATES)) {
+      if (img && img.loaded) return img;
+    }
+  }
+  if (typeof stageManager !== "undefined" && stageManager.bgImages) {
+    for (const img of Object.values(stageManager.bgImages)) {
+      if (img && img.loaded) return img;
+    }
   }
   return null;
 }
@@ -68,45 +76,44 @@ function drawActiveScreenBackground(scr) {
   const customBg = resolveScreenBackgroundImage(scr);
   const isDarkDungeon = Boolean(customBg);
 
+  // 1. Always lay down the open cream notebook spread first
+  const grad = ctx.createLinearGradient(0, 0, W, 0);
+  grad.addColorStop(0.00, "#ede7d8");
+  grad.addColorStop(0.47, "#f7f4eb");
+  grad.addColorStop(0.50, "#d8d0be");
+  grad.addColorStop(0.53, "#f7f4eb");
+  grad.addColorStop(1.00, "#ede7d8");
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+
+  // 2. Blend the dungeon background template semi-transparently across all rooms
   if (customBg) {
     ctx.save();
+    ctx.globalAlpha = 0.68;
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(customBg, 0, 0, game.worldW, game.worldH);
     ctx.imageSmoothingEnabled = true;
 
     // Subtle warm torchlight ambience
     const flicker = 0.04 + Math.sin(game.elapsedTime * 7.5) * 0.02;
+    ctx.globalAlpha = 1.0;
     ctx.fillStyle = `rgba(251, 146, 60, ${flicker})`;
     ctx.fillRect(0, 0, game.worldW, game.worldH);
-
-    // Subtle center spine crease
-    ctx.strokeStyle = "rgba(15, 23, 42, 0.45)";
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(HALF_W, 0);
-    ctx.lineTo(HALF_W, H);
-    ctx.stroke();
     ctx.restore();
-  } else {
-    const grad = ctx.createLinearGradient(0, 0, W, 0);
-    grad.addColorStop(0.00, "#ede7d8");
-    grad.addColorStop(0.47, "#f7f4eb");
-    grad.addColorStop(0.50, "#d8d0be");
-    grad.addColorStop(0.53, "#f7f4eb");
-    grad.addColorStop(1.00, "#ede7d8");
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, W, H);
-
-    drawRuledPage(0, 0, scr.pageLeft, true);
-    drawRuledPage(HALF_W, 0, scr.pageRight, false);
-
-    ctx.strokeStyle = "rgba(80, 75, 65, 0.45)";
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(HALF_W, 0);
-    ctx.lineTo(HALF_W, H);
-    ctx.stroke();
   }
+
+  // 3. Retain semi-transparent notebook ruled lines, margin lines, page numbers & spine crease on top
+  drawRuledPage(0, 0, scr.pageLeft, true, isDarkDungeon);
+  drawRuledPage(HALF_W, 0, scr.pageRight, false, isDarkDungeon);
+
+  ctx.save();
+  ctx.strokeStyle = isDarkDungeon ? "rgba(15, 23, 42, 0.48)" : "rgba(80, 75, 65, 0.45)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(HALF_W, 0);
+  ctx.lineTo(HALF_W, H);
+  ctx.stroke();
+  ctx.restore();
 
   drawNotebookHeaderOverlay(isDarkDungeon);
 
@@ -213,24 +220,38 @@ function drawActiveScreenBackground(scr) {
   }
 }
 
-function drawRuledPage(px, py, pageNum, isLeft) {
+function drawRuledPage(px, py, pageNum, isLeft, isDarkDungeon = false) {
   const padX = 28;
   const headerY = py + 52;
   const footerY = py + H - 28;
   const lineGap = 24;
 
-  ctx.strokeStyle = "rgba(130, 145, 165, 0.35)";
+  ctx.save();
+  // Semi-transparent horizontal ruled notebook lines
+  ctx.strokeStyle = isDarkDungeon ? "rgba(226, 232, 240, 0.22)" : "rgba(130, 145, 165, 0.35)";
   ctx.lineWidth = 1;
   ctx.beginPath();
   for (let y = headerY; y <= footerY; y += lineGap) {
-    ctx.moveTo(px + padX, y);
-    ctx.lineTo(px + HALF_W - padX, y);
+    ctx.moveTo(px + padX, y + 0.5);
+    ctx.lineTo(px + HALF_W - padX, y + 0.5);
   }
   ctx.stroke();
 
-  ctx.fillStyle = "rgba(110, 115, 125, 0.8)";
-  ctx.font = "11px monospace";
-  ctx.fillText(String(pageNum), isLeft ? px + padX + 6 : px + HALF_W - padX - 18, footerY + 16);
+  // Subtle vertical notebook margin rule on the outer page edge
+  const marginX = isLeft ? (px + padX + 26) : (px + HALF_W - padX - 26);
+  ctx.strokeStyle = isDarkDungeon ? "rgba(248, 113, 113, 0.22)" : "rgba(220, 38, 38, 0.22)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(marginX + 0.5, headerY - 12);
+  ctx.lineTo(marginX + 0.5, footerY + 6);
+  ctx.stroke();
+
+  if (pageNum !== undefined && pageNum !== null) {
+    ctx.fillStyle = isDarkDungeon ? "rgba(226, 232, 240, 0.65)" : "rgba(110, 115, 125, 0.8)";
+    ctx.font = "11px monospace";
+    ctx.fillText(String(pageNum), isLeft ? px + padX + 6 : px + HALF_W - padX - 24, footerY + 16);
+  }
+  ctx.restore();
 }
 
 function drawSubtleExitMark(scr) {
@@ -418,6 +439,7 @@ function drawScreenEntities(scr) {
     if (!e.alive) continue;
     if (e.kind === "alien") drawAlienEnemy(e, isDarkDungeon);
     else if (e.kind === "blade") drawBladeEnemy(e);
+    else if (e.kind === "knifer") drawKniferEnemy(e);
     else if (e.kind === "giant") drawAxeGiant(e);
   }
 }
@@ -509,6 +531,91 @@ function drawBladeEnemy(e) {
   ctx.fillStyle = "#1e293b";
   ctx.fillRect(e.x, e.y - 9, e.w, 4);
   ctx.fillStyle = e.alerted ? "#dc2626" : "#64748b";
+  ctx.fillRect(e.x, e.y - 9, e.w * Math.max(0, e.hp / e.maxHp), 4);
+}
+
+function drawKniferEnemy(e) {
+  const isDashing = e.aiState === "DASH_STAB";
+  const isWindup = e.aiState === "DASH_WINDUP";
+  const hasSprite = typeof EXTRA_SPRITES !== "undefined" && EXTRA_SPRITES.knifer && EXTRA_SPRITES.knifer.loaded;
+
+  // Dash afterimage trail
+  if (isDashing && hasSprite) {
+    const src = EXTRA_SPRITES.knifer.canvas || EXTRA_SPRITES.knifer.img;
+    const drawW = e.w * 1.40;
+    const drawH = e.h;
+    for (let t = 1; t <= 2; t++) {
+      ctx.save();
+      ctx.globalAlpha = 0.28 / t;
+      ctx.translate(e.x + e.w / 2 - (e.facing || 1) * t * 11, e.y + e.h);
+      ctx.scale(e.facing || 1, 1);
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(src, -drawW * 0.38, -drawH, drawW, drawH);
+      ctx.restore();
+    }
+  }
+
+  ctx.save();
+  const step = Math.floor(e.animTimer * (isDashing ? 20 : 11));
+  const bobY = isDashing || isWindup ? 0 : (step % 2 === 0 ? -2 : 0);
+  const crouchScaleY = isWindup ? 0.90 : 1.0;
+  const leanTilt = isDashing ? 0.18 : (isWindup ? -0.14 : 0);
+
+  ctx.translate(e.x + e.w / 2, e.y + e.h + bobY);
+  ctx.scale(e.facing || 1, crouchScaleY);
+  ctx.rotate(leanTilt);
+
+  if (hasSprite) {
+    const src = EXTRA_SPRITES.knifer.canvas || EXTRA_SPRITES.knifer.img;
+    const drawW = e.w * 1.40;
+    const drawH = e.h;
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(src, -drawW * 0.38, -drawH, drawW, drawH);
+    ctx.imageSmoothingEnabled = true;
+
+    if (e.hurtTimer > 0) {
+      ctx.fillStyle = "rgba(220, 38, 38, 0.38)";
+      ctx.fillRect(-e.w * 0.45, -drawH, e.w * 0.9, drawH);
+    }
+  } else {
+    // Fallback low-profile hooded knifer silhouette
+    ctx.fillStyle = e.hurtTimer > 0 ? "#fecaca" : "#334155";
+    ctx.strokeStyle = "#0f172a";
+    ctx.lineWidth = 2;
+    ctx.fillRect(-9, -36, 18, 22);
+    ctx.strokeRect(-9, -36, 18, 22);
+    ctx.beginPath();
+    ctx.arc(0, -42, 6.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    // Pinching knife blade
+    ctx.fillStyle = "#e2e8f0";
+    ctx.beginPath();
+    ctx.moveTo(8, -28);
+    ctx.lineTo(22, -25);
+    ctx.lineTo(8, -22);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  }
+
+  // Forward pinching-knife dash glint
+  if (isDashing || isWindup) {
+    ctx.strokeStyle = isDashing ? "rgba(250, 204, 21, 0.95)" : "rgba(248, 113, 113, 0.85)";
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(8, -e.h * 0.46);
+    ctx.lineTo(isDashing ? 28 : 18, -e.h * 0.46);
+    ctx.stroke();
+  }
+
+  ctx.restore();
+
+  // HP Bar
+  ctx.fillStyle = "#1e293b";
+  ctx.fillRect(e.x, e.y - 9, e.w, 4);
+  ctx.fillStyle = isDashing ? "#facc15" : (e.alerted ? "#f97316" : "#64748b");
   ctx.fillRect(e.x, e.y - 9, e.w * Math.max(0, e.hp / e.maxHp), 4);
 }
 
