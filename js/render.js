@@ -759,6 +759,65 @@ function drawHero() {
   }
 }
 
+function drawCannonBallSprite(m) {
+  const r = m.r || 11;
+  ctx.save();
+  ctx.translate(m.x, m.y);
+  ctx.rotate(m.rot || 0);
+
+  if (EXTRA_SPRITES.cannonball && EXTRA_SPRITES.cannonball.loaded) {
+    const src = EXTRA_SPRITES.cannonball.canvas || EXTRA_SPRITES.cannonball.img;
+    const size = r * 2.7;
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(src, -size * 0.46, -size * 0.54, size, size);
+    ctx.imageSmoothingEnabled = true;
+  } else {
+    // Pixel-art round iron cannonball with lit sparkling fuse
+    ctx.fillStyle = "#334155";
+    ctx.strokeStyle = "#0f172a";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = "#64748b";
+    ctx.beginPath();
+    ctx.arc(-r * 0.32, -r * 0.32, r * 0.32, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Fuse cap & stem
+    ctx.fillStyle = "#1e293b";
+    ctx.fillRect(r * 0.55, -r * 0.85, 5, 5);
+    ctx.strokeStyle = "#b45309";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(r * 0.8, -r * 0.7);
+    ctx.lineTo(r * 1.35, -r * 1.15);
+    ctx.stroke();
+
+    // Lit spark
+    ctx.fillStyle = Math.floor(m.timer * 24) % 2 === 0 ? "#ef4444" : "#facc15";
+    ctx.beginPath();
+    ctx.arc(r * 1.4, -r * 1.2, 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.restore();
+
+  // Imminent detonation pulse flash in final 0.25s before 1.0s blast
+  if (m.timer > 0.75) {
+    const pulse = (m.timer - 0.75) / 0.25;
+    ctx.save();
+    ctx.strokeStyle = `rgba(239, 68, 68, ${0.4 + pulse * 0.5})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(m.x, m.y, r + 4 + pulse * 8, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
 function drawProjectilesAndAimMark() {
   ctx.fillStyle = "#1d4ed8";
   for (const b of game.bullets) {
@@ -790,13 +849,19 @@ function drawProjectilesAndAimMark() {
   }
 
   for (const m of game.missiles) {
+    drawCannonBallSprite(m);
+  }
+
+  for (const sw of game.shockwaves) {
+    const alpha = Math.max(0, sw.life / sw.maxLife);
     ctx.save();
-    ctx.translate(m.x, m.y);
-    ctx.rotate(Math.atan2(m.vy, m.vx));
-    ctx.fillStyle = "#dc2626";
-    ctx.fillRect(-10, -4, 20, 8);
-    ctx.fillStyle = "#facc15";
-    ctx.fillRect(6, -3, 6, 6);
+    ctx.strokeStyle = `rgba(239, 68, 68, ${alpha * 0.85})`;
+    ctx.fillStyle = `rgba(250, 204, 21, ${alpha * 0.22})`;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(sw.x, sw.y, sw.radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
     ctx.restore();
   }
 
@@ -884,13 +949,16 @@ function drawHUD() {
 
   if (!hero.hasMissileHat) {
     ctx.fillStyle = "#94a3b8";
-    ctx.fillText(`HAT:--`, 454, 17);
+    ctx.fillText(`HAT:--`, 452, 17);
   } else if (hero.hatCooldown <= 0) {
     ctx.fillStyle = "#facc15";
-    ctx.fillText(`HAT:RDY`, 454, 17);
+    ctx.fillText(`HAT:RDY`, 452, 17);
   } else {
     ctx.fillStyle = "#fb923c";
-    ctx.fillText(`HAT:${hero.hatCooldown.toFixed(1)}`, 454, 17);
+    const cdLabel = hero.hatCooldown >= 10
+      ? `${Math.ceil(hero.hatCooldown)}s`
+      : hero.hatCooldown.toFixed(1);
+    ctx.fillText(`HAT:${cdLabel}`, 452, 17);
   }
 
   const atkMult = getCompoundAttackMultiplier(game.transitions);
@@ -1044,7 +1112,7 @@ function drawSelectScreen() {
 
   ctx.fillStyle = "#cbd5e1";
   ctx.font = "12px monospace";
-  ctx.fillText(`ASDW MOVE/JUMP/LADDER  |  MOUSE AIM + L-CLICK ${GUN_BURST_COUNT}-BURST GUN  |  R-CLICK BONE  |  F HAT MISSILE  |  [B] BOSS AFTER 10 ROOMS`, W / 2, 68);
+  ctx.fillText(`ASDW MOVE/JUMP/LADDER  |  MOUSE AIM + L-CLICK ${GUN_BURST_COUNT}-BURST GUN  |  R-CLICK BONE  |  F CANNON BALL (60s)  |  [B] BOSS AFTER 10 ROOMS`, W / 2, 68);
 
   const diffBtns = [
     { id: "NORMAL",   label: "NORMAL (1) [N]",   x: W / 2 - 345, y: 82, w: 216, h: 34 },
