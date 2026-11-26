@@ -34,7 +34,7 @@ const game = {
 const hero = {
   x: 112, y: 492, w: 34, h: 56,
   vx: 0, vy: 0, facing: 1, aimAngle: 0,
-  grounded: false, onLadder: false, dropThroughTimer: 0,
+  grounded: false, onLadder: false, activeLadder: null, dropThroughTimer: 0, downHoldTimer: 0,
   hp: 100, maxHp: 100, invulnTimer: 0,
   gunCooldown: 0, gunBurstRemaining: 0, gunReloadTimer: 0,
   bones: 0,
@@ -71,6 +71,7 @@ function damageHero(amount, knockDir) {
   hero.hp = Math.max(0, hero.hp - amount);
   hero.invulnTimer = 1.0;
   hero.onLadder = false;
+  hero.activeLadder = null;
   hero.vx = knockDir * 210;
   hero.vy = -250;
   game.shakeTimer = 0.2;
@@ -142,6 +143,7 @@ function stepHero(input, scr) {
         if (hero.grounded || hero.onLadder) {
           hero.asthmaStun = hero.stats.stunDurationSec;
           hero.onLadder = false;
+          hero.activeLadder = null;
           SFX.beep(180, 0.3, "sine", 0.09, 110);
           return;
         } else {
@@ -153,18 +155,21 @@ function stepHero(input, scr) {
     }
   }
 
-  const heroCenter = { x: hero.x + 6, y: hero.y + 4, w: hero.w - 12, h: hero.h };
-  const ladder = scr.ladders.find(l => rectsOverlap(heroCenter, l));
+  // Forgiving ladder detection box (reaches 14px below feet so top of ladder is easy to grab)
+  const ladderGrabBox = { x: hero.x - 4, y: hero.y - 4, w: hero.w + 8, h: hero.h + 14 };
+  const ladder = scr.ladders.find(l => rectsOverlap(ladderGrabBox, l));
 
   if (ladder && (input.wHeld || input.sHeld)) {
     hero.onLadder = true;
+    hero.activeLadder = ladder;
     hero.grounded = false;
     hero.vx = 0;
     hero.vy = input.wHeld ? -CLIMB_SPEED : CLIMB_SPEED;
     const targetX = ladder.x + (ladder.w - hero.w) / 2;
-    hero.x += (targetX - hero.x) * 0.35;
+    hero.x += (targetX - hero.x) * 0.45;
   } else if (!ladder) {
     hero.onLadder = false;
+    hero.activeLadder = null;
   }
 
   if (!hero.onLadder) {
@@ -179,10 +184,18 @@ function stepHero(input, scr) {
     hero.vx = moveDir * WALK_SPEED * 0.75;
   }
 
-  if (input.jumpPressed && input.sHeld && hero.grounded && !hero.onLadder) {
-    hero.dropThroughTimer = 0.18;
+  // Drop through red one-way platforms via S+Space OR holding S (Down) briefly when not on a ladder
+  if (input.sHeld && hero.grounded && !hero.onLadder) {
+    hero.downHoldTimer += DT;
+  } else {
+    hero.downHoldTimer = 0;
+  }
+
+  if (((input.jumpPressed && input.sHeld) || hero.downHoldTimer >= 0.14) && hero.grounded && !hero.onLadder) {
+    hero.dropThroughTimer = 0.22;
+    hero.downHoldTimer = 0;
     hero.grounded = false;
-    hero.y += 4;
+    hero.y += 5;
   } else if (input.jumpPressed && hero.grounded && !hero.onLadder) {
     hero.grounded = false;
     hero.vy = JUMP_VEL;
@@ -279,9 +292,13 @@ function stepHero(input, scr) {
 }
 
 function resolveCollisions(scr, stunned) {
+  const onActiveLadder = hero.onLadder && hero.activeLadder;
+
   hero.x += hero.vx * DT;
   for (const s of scr.solids) {
     if (rectsOverlap(hero, s)) {
+      // Allow horizontal centering onto ladder shaft without snagging on adjacent floor edge
+      if (onActiveLadder && s.y < game.worldH - 40 && Math.abs((hero.y + hero.h) - s.y) <= 18) continue;
       if (hero.vx > 0) hero.x = s.x - hero.w;
       else if (hero.vx < 0) hero.x = s.x + s.w;
       hero.vx = 0;
@@ -293,6 +310,13 @@ function resolveCollisions(scr, stunned) {
   hero.grounded = false;
 
   for (const s of scr.solids) {
+    // Let climber pass vertically through upper floor slabs along the ladder shaft (keep bottom floor solid)
+    if (onActiveLadder && s.y < game.worldH - 40) {
+      const overlapsLadderX = s.x < hero.activeLadder.x + hero.activeLadder.w + 8 &&
+                              s.x + s.w > hero.activeLadder.x - 8;
+      if (overlapsLadderX) continue;
+    }
+
     if (rectsOverlap(hero, s)) {
       if (hero.vy > 0) {
         hero.y = s.y - hero.h;
