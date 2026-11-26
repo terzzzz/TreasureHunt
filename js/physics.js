@@ -441,11 +441,63 @@ function stepProjectilesAndPickups(scr) {
   }
 }
 
+function alertGiantAxeman(enemy) {
+  if (!enemy || enemy.kind !== "giant") return;
+  const heroCenterX = hero.x + hero.w * 0.5;
+  const enemyCenterX = enemy.x + enemy.w * 0.5;
+
+  if (!enemy.alerted) {
+    enemy.alertTimer = 0.75;
+    SFX.beep(165, 0.14, "sawtooth", 0.08, 220);
+  }
+  enemy.alerted = true;
+  enemy.aggroTimer = 6.5;
+  enemy.facing = heroCenterX < enemyCenterX ? -1 : 1;
+
+  if (enemy.aiState === "PATROL") {
+    enemy.aiState = "CHASE";
+  }
+}
+
+function hasGiantLineOfSight(scr, g) {
+  const gx = g.x + g.w * 0.5;
+  const hx = hero.x + hero.w * 0.5;
+  const dx = hx - gx;
+  const absDx = Math.abs(dx);
+
+  // Must be on roughly the same floor elevation
+  const dy = Math.abs((hero.y + hero.h) - (g.y + g.h));
+  if (dy > (g.isBoss ? 140 : 95)) return false;
+
+  // Detect player in front within visionRange, or very close behind (footsteps)
+  const inFront = (dx * g.facing >= 0) && (absDx <= (g.visionRange || 330));
+  const closeBehind = absDx <= 64;
+  if (!inFront && !closeBehind) return false;
+
+  // Check if a solid wall blocks line of sight between giant's eye level and hero's chest
+  const eyeY = g.y + g.h * 0.28;
+  const minRayX = Math.min(gx, hx);
+  const maxRayX = Math.max(gx, hx);
+  for (const s of scr.solids) {
+    if (s.y <= eyeY && s.y + s.h >= eyeY) {
+      if (s.x + s.w > minRayX && s.x < maxRayX) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
 function damageEnemy(enemy, dmg, hitX, hitY) {
   enemy.hp -= dmg;
   enemy.hurtTimer = 0.14;
   spawnParticles(hitX, hitY, "#dc2626", 6, 120);
   SFX.beep(190, 0.07, "square", 0.07, 110);
+
+  // Shooting or hitting the giant immediately activates him to hunt the player
+  if (enemy.kind === "giant" && enemy.hp > 0) {
+    alertGiantAxeman(enemy);
+  }
 
   if (enemy.hp <= 0) {
     enemy.alive = false;
@@ -485,48 +537,87 @@ function stepEnemies(scr) {
       if (rectsOverlap(hero, e)) {
         damageHero(e.atk || Math.round(16 * atkMult), hero.x < e.x ? -1 : 1);
       }
-    } else if (e.kind === "giant") {
-      const distToHero = Math.abs((hero.x + hero.w / 2) - (e.x + e.w / 2));
-      const sameHeight = Math.abs((hero.y + hero.h) - (e.y + e.h)) < (e.isBoss ? 140 : 80);
-      const reach = e.isBoss ? 145 : 110;
+      continue;
+    }
 
-      if (e.aiState === "WALK") {
+    if (e.kind === "giant") {
+      if (e.alertTimer > 0) e.alertTimer = Math.max(0, e.alertTimer - DT);
+      if (e.chargeCooldown > 0) e.chargeCooldown = Math.max(0, e.chargeCooldown - DT);
+
+      const gx = e.x + e.w * 0.5;
+      const hx = hero.x + hero.w * 0.5;
+      const dx = hx - gx;
+      const distToHero = Math.abs(dx);
+      const sameFloor = Math.abs((hero.y + hero.h) - (e.y + e.h)) < (e.isBoss ? 140 : 95);
+      const canSeeHero = hasGiantLineOfSight(scr, e);
+
+      // Vision trigger activates pursuit
+      if (canSeeHero) {
+        alertGiantAxeman(e);
+      } else if (e.alerted && !e.isBoss) {
+        e.aggroTimer -= DT;
+        if (e.aggroTimer <= 0 && distToHero > 460) {
+          e.alerted = false;
+          e.aiState = "PATROL";
+        }
+      }
+
+      const meleeReach = e.isBoss ? 132 : 98;
+      const chargeMinRange = e.isBoss ? 145 : 115;
+      const chargeMaxRange = e.isBoss ? 460 : 340;
+
+      if (e.aiState === "PATROL" || e.aiState === "WALK") {
         e.animTimer += DT;
-        if (e.isBoss) {
-          const dir = hero.x + hero.w * 0.5 < e.x + e.w * 0.5 ? -1 : 1;
-          e.facing = dir;
-          e.x += dir * Math.abs(e.vx) * DT;
-          e.x = Math.max(e.minX, Math.min(e.maxX - e.w, e.x));
-        } else {
-          e.x += e.vx * DT;
-          if (e.x <= e.minX) { e.x = e.minX; e.vx = Math.abs(e.vx); e.facing = 1; }
-          if (e.x + e.w >= e.maxX) { e.x = e.maxX - e.w; e.vx = -Math.abs(e.vx); e.facing = -1; }
-        }
+        e.x += e.vx * DT;
         e.weaponAngle = -0.35 + Math.sin(Math.floor(e.animTimer * 8)) * 0.12;
+        if (e.x <= e.minX) { e.x = e.minX; e.vx = Math.abs(e.vx); e.facing = 1; }
+        if (e.x + e.w >= e.maxX) { e.x = e.maxX - e.w; e.vx = -Math.abs(e.vx); e.facing = -1; }
+      } else if (e.aiState === "CHASE") {
+        e.animTimer += DT * 1.45;
+        e.facing = dx < 0 ? -1 : 1;
+        e.weaponAngle = -0.45 + Math.sin(e.animTimer * 12) * 0.18;
 
-        if (distToHero < reach && sameHeight) {
-          e.facing = hero.x < e.x ? -1 : 1;
-          e.aiState = "WINDUP";
-          e.aiTimer = 0.38;
+        // 1. Close range -> Standing Axe Swing
+        if (distToHero <= meleeReach && sameFloor) {
+          e.aiState = "STAND_WINDUP";
+          e.aiTimer = 0.36;
         }
-      } else if (e.aiState === "WINDUP") {
+        // 2. Mid-to-long range on same floor -> Charging Running Axe Swing
+        else if (
+          e.chargeCooldown <= 0 &&
+          sameFloor &&
+          distToHero >= chargeMinRange &&
+          distToHero <= chargeMaxRange
+        ) {
+          e.aiState = "CHARGE_WINDUP";
+          e.aiTimer = 0.44;
+          e.chargeDir = e.facing;
+          SFX.beep(125, 0.18, "sawtooth", 0.09, 85);
+        }
+        // 3. Otherwise advance toward player within patrol bounds
+        else {
+          const step = e.facing * (e.chaseSpeed || 96) * DT;
+          e.x = Math.max(e.minX, Math.min(e.maxX - e.w, e.x + step));
+        }
+      } else if (e.aiState === "STAND_WINDUP") {
         e.aiTimer -= DT;
-        e.weaponAngle = -1.35;
+        e.weaponAngle = -1.4;
         if (e.aiTimer <= 0) {
-          e.aiState = "STRIKE";
-          e.aiTimer = 0.16;
+          e.aiState = "STAND_STRIKE";
+          e.aiTimer = 0.18;
           e.struckThisSwing = false;
           SFX.beep(130, 0.14, "sawtooth", 0.09, 70);
         }
-      } else if (e.aiState === "STRIKE") {
+      } else if (e.aiState === "STAND_STRIKE") {
         e.aiTimer -= DT;
         e.weaponAngle = 1.45;
         if (!e.struckThisSwing) {
+          const wpnLen = e.weaponLength || 68;
           const axeBox = {
-            x: e.facing === 1 ? e.x + e.w * 0.5 : e.x + e.w * 0.5 - e.weaponLength,
-            y: e.y + e.h * 0.22,
-            w: e.weaponLength,
-            h: e.h * 0.75
+            x: e.facing === 1 ? e.x + e.w * 0.45 : e.x + e.w * 0.55 - wpnLen,
+            y: e.y + e.h * 0.18,
+            w: wpnLen,
+            h: e.h * 0.78
           };
           if (rectsOverlap(hero, axeBox)) {
             e.struckThisSwing = true;
@@ -537,10 +628,61 @@ function stepEnemies(scr) {
           e.aiState = "RECOVER";
           e.aiTimer = 0.45;
         }
+      } else if (e.aiState === "CHARGE_WINDUP") {
+        e.aiTimer -= DT;
+        e.weaponAngle = -1.55;
+        if (e.aiTimer <= 0) {
+          e.aiState = "CHARGE_RUN";
+          e.aiTimer = 0.72;
+          e.chargeDistTraveled = 0;
+          e.struckThisSwing = false;
+          e.chargeCooldown = 3.2;
+          SFX.beep(155, 0.22, "sawtooth", 0.1, 65);
+        }
+      } else if (e.aiState === "CHARGE_RUN") {
+        e.aiTimer -= DT;
+        e.animTimer += DT * 2.6;
+        const dir = e.chargeDir || e.facing;
+        e.facing = dir;
+
+        // Continuously swing axe while charging forward
+        e.weaponAngle = Math.sin(e.animTimer * 22) * 1.35;
+
+        const moveStep = dir * (e.chargeSpeed || 245) * DT;
+        const nextX = Math.max(e.minX, Math.min(e.maxX - e.w, e.x + moveStep));
+        const actualMoved = Math.abs(nextX - e.x);
+        e.x = nextX;
+        e.chargeDistTraveled += actualMoved;
+
+        if (Math.random() < 0.45) {
+          spawnParticles(e.x + e.w * 0.5, e.y + e.h - 4, "#94a3b8", 1, 70);
+        }
+
+        if (!e.struckThisSwing) {
+          const wpnLen = e.weaponLength || 68;
+          const swingBox = {
+            x: dir === 1 ? e.x + e.w * 0.35 : e.x + e.w * 0.65 - wpnLen,
+            y: e.y + e.h * 0.16,
+            w: wpnLen,
+            h: e.h * 0.80
+          };
+          if (rectsOverlap(hero, swingBox)) {
+            e.struckThisSwing = true;
+            damageHero(e.chargeAtk || Math.round(32 * atkMult), dir);
+          }
+        }
+
+        const hitBoundary = actualMoved < Math.abs(moveStep) * 0.25;
+        if (e.aiTimer <= 0 || e.chargeDistTraveled >= (e.chargeMaxDist || 230) || hitBoundary) {
+          e.aiState = "RECOVER";
+          e.aiTimer = 0.62;
+        }
       } else if (e.aiState === "RECOVER") {
         e.aiTimer -= DT;
-        e.weaponAngle = 0.9;
-        if (e.aiTimer <= 0) e.aiState = "WALK";
+        e.weaponAngle = 0.85;
+        if (e.aiTimer <= 0) {
+          e.aiState = e.alerted ? "CHASE" : "PATROL";
+        }
       }
 
       if (rectsOverlap(hero, e)) {
