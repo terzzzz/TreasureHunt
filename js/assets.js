@@ -27,17 +27,76 @@ function loadKeyedSprite(src, keyBg = true, eraseOriginalGun = false) {
         const imgData = octx.getImageData(0, 0, w, h);
         const d = imgData.data;
         const bgR = d[0], bgG = d[1], bgB = d[2];
-        for (let i = 0; i < d.length; i += 4) {
-          if (d[i + 3] === 0) continue;
-          const r = d[i], g = d[i + 1], b = d[i + 2];
+        const visited = new Uint8Array(w * h);
+        const queue = new Int32Array(w * h);
+        let head = 0;
+        let tail = 0;
+
+        const isBgPixel = (idx) => {
+          const p = idx * 4;
+          if (d[p + 3] === 0) return true;
+          const r = d[p], g = d[p + 1], b = d[p + 2];
           const dist = Math.hypot(r - bgR, g - bgG, b - bgB);
-          const isNearWhite = r > 235 && g > 235 && b > 235;
-          if (dist < 26 || isNearWhite) {
-            d[i + 3] = 0;
-          } else if (dist < 44) {
-            d[i + 3] = Math.round(((dist - 26) / 18) * 255);
+          const isNearWhite = r > 232 && g > 232 && b > 232;
+          return dist < 32 || isNearWhite;
+        };
+
+        // Seed flood-fill from all 4 outer edges so enclosed whites (e.g. white eyes) stay opaque
+        for (let x = 0; x < w; x++) {
+          const topIdx = x;
+          const botIdx = (h - 1) * w + x;
+          if (!visited[topIdx] && isBgPixel(topIdx)) { visited[topIdx] = 1; queue[tail++] = topIdx; }
+          if (!visited[botIdx] && isBgPixel(botIdx)) { visited[botIdx] = 1; queue[tail++] = botIdx; }
+        }
+        for (let y = 1; y < h - 1; y++) {
+          const leftIdx = y * w;
+          const rightIdx = y * w + (w - 1);
+          if (!visited[leftIdx] && isBgPixel(leftIdx)) { visited[leftIdx] = 1; queue[tail++] = leftIdx; }
+          if (!visited[rightIdx] && isBgPixel(rightIdx)) { visited[rightIdx] = 1; queue[tail++] = rightIdx; }
+        }
+
+        while (head < tail) {
+          const idx = queue[head++];
+          d[idx * 4 + 3] = 0;
+
+          const x = idx % w;
+          const y = (idx - x) / w;
+
+          if (x > 0) {
+            const n = idx - 1;
+            if (!visited[n] && isBgPixel(n)) { visited[n] = 1; queue[tail++] = n; }
+          }
+          if (x + 1 < w) {
+            const n = idx + 1;
+            if (!visited[n] && isBgPixel(n)) { visited[n] = 1; queue[tail++] = n; }
+          }
+          if (y > 0) {
+            const n = idx - w;
+            if (!visited[n] && isBgPixel(n)) { visited[n] = 1; queue[tail++] = n; }
+          }
+          if (y + 1 < h) {
+            const n = idx + w;
+            if (!visited[n] && isBgPixel(n)) { visited[n] = 1; queue[tail++] = n; }
           }
         }
+
+        // Soften 1px anti-aliased fringe touching cleared background pixels
+        for (let y = 1; y < h - 1; y++) {
+          for (let x = 1; x < w - 1; x++) {
+            const idx = y * w + x;
+            if (visited[idx]) continue;
+            const p = idx * 4;
+            if (d[p + 3] === 0) continue;
+            if (visited[idx - 1] || visited[idx + 1] || visited[idx - w] || visited[idx + w]) {
+              const r = d[p], g = d[p + 1], b = d[p + 2];
+              const dist = Math.hypot(r - bgR, g - bgG, b - bgB);
+              if (dist < 56) {
+                d[p + 3] = Math.round(((dist - 24) / 32) * 255);
+              }
+            }
+          }
+        }
+
         octx.putImageData(imgData, 0, 0);
       }
     } catch (_) {
@@ -78,12 +137,13 @@ const CHAR_LAYERS = {
   asthma:     loadKeyedSprite("./char/asthma.jpeg", true, true)
 };
 
+// Disjoint facial zones so white eyes (blind) and hearing aid (deaf) never overwrite each other
 const TRAIT_BODY_ZONES = {
-  blind:      [0.18, 0.02, 0.56, 0.36],
-  deaf:       [0.10, 0.04, 0.50, 0.36],
-  asthma:     [0.24, 0.34, 0.40, 0.32],
-  tremor:     [0.16, 0.36, 0.46, 0.34],
-  prosthesis: [0.16, 0.64, 0.72, 0.36]
+  blind:      [0.505, 0.14, 0.125, 0.09],
+  deaf:       [0.380, 0.14, 0.125, 0.13],
+  asthma:     [0.240, 0.34, 0.400, 0.32],
+  tremor:     [0.160, 0.36, 0.460, 0.34],
+  prosthesis: [0.160, 0.64, 0.720, 0.36]
 };
 
 function loadGroundEnemySprite(primarySrc, fallbackSrc, floorCutoffRatio = 0.785) {
@@ -98,7 +158,6 @@ function loadGroundEnemySprite(primarySrc, fallbackSrc, floorCutoffRatio = 0.785
     const octx = off.getContext("2d");
     octx.drawImage(img, 0, 0);
 
-    // Strip the dark ground strip at the bottom of the source image if present
     const floorCutoffY = Math.floor(h * floorCutoffRatio);
     if (floorCutoffY < h) {
       octx.clearRect(0, floorCutoffY, w, h - floorCutoffY);
@@ -188,7 +247,6 @@ async function initStage001() {
     }
   } catch (_) {}
 
-  // Guarantee the 頂帽大炮 Alien always spawns in start.jpeg (screen 0)
   const startScr = stageManager.data.screens[0];
   if (startScr) {
     startScr.enemies = startScr.enemies || [];
