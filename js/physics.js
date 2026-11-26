@@ -2,10 +2,10 @@
 "use strict";
 
 // Machine Gun & Bullet Pace Tuning
-const GUN_BURST_COUNT = 5;        // Rounds per burst (was 7)
-const GUN_SHOT_INTERVAL = 0.095;  // Seconds between shots inside a burst (was 0.045)
-const GUN_RELOAD_TIME = 0.68;     // Seconds pause between bursts (was 0.40)
-const BULLET_SPEED_MULT = 0.80;   // -20% bullet speed (was 1.00)
+const GUN_BURST_COUNT = 5;        // Rounds per burst
+const GUN_SHOT_INTERVAL = 0.095;  // Seconds between shots inside a burst
+const GUN_RELOAD_TIME = 0.68;     // Seconds pause between bursts
+const BULLET_SPEED_MULT = 0.80;   // -20% bullet speed
 
 const game = {
   state: "SELECT",
@@ -161,7 +161,6 @@ function stepHero(input, scr) {
     }
   }
 
-  // Forgiving ladder detection box (reaches 14px below feet so top of ladder is easy to grab)
   const ladderGrabBox = { x: hero.x - 4, y: hero.y - 4, w: hero.w + 8, h: hero.h + 14 };
   const ladder = scr.ladders.find(l => rectsOverlap(ladderGrabBox, l));
 
@@ -190,7 +189,6 @@ function stepHero(input, scr) {
     hero.vx = moveDir * WALK_SPEED * 0.75;
   }
 
-  // Drop through red one-way platforms via S+Space OR holding S (Down) briefly when not on a ladder
   if (input.sHeld && hero.grounded && !hero.onLadder) {
     hero.downHoldTimer += DT;
   } else {
@@ -480,10 +478,10 @@ function alertGiantAxeman(enemy) {
     SFX.beep(165, 0.14, "sawtooth", 0.08, 220);
   }
   enemy.alerted = true;
-  enemy.aggroTimer = 6.5;
+  enemy.aggroTimer = 8.0;
   enemy.facing = heroCenterX < enemyCenterX ? -1 : 1;
 
-  if (enemy.aiState === "PATROL") {
+  if (enemy.aiState === "PATROL" || enemy.aiState === "WALK") {
     enemy.aiState = "CHASE";
   }
 }
@@ -495,23 +493,49 @@ function hasGiantLineOfSight(scr, g) {
   const absDx = Math.abs(dx);
 
   const dy = Math.abs((hero.y + hero.h) - (g.y + g.h));
-  if (dy > (g.isBoss ? 140 : 95)) return false;
+  if (dy > (g.isBoss ? 150 : 120)) return false;
 
-  const inFront = (dx * g.facing >= 0) && (absDx <= (g.visionRange || 330));
-  const closeBehind = absDx <= 64;
+  const inFront = (dx * g.facing >= 0) && (absDx <= (g.visionRange || 420));
+  const closeBehind = absDx <= 110;
   if (!inFront && !closeBehind) return false;
 
-  const eyeY = g.y + g.h * 0.28;
+  // Only vertical barrier walls block line of sight (skip wide horizontal floor slabs)
+  const eyeY = g.y + g.h * 0.30;
   const minRayX = Math.min(gx, hx);
   const maxRayX = Math.max(gx, hx);
   for (const s of scr.solids) {
-    if (s.y <= eyeY && s.y + s.h >= eyeY) {
+    if (s.w <= 36 && s.h > 40 && s.y <= eyeY && s.y + s.h >= eyeY) {
       if (s.x + s.w > minRayX && s.x < maxRayX) {
         return false;
       }
     }
   }
   return true;
+}
+
+function snapEnemyToGround(scr, e) {
+  const footX = e.x + e.w * 0.5;
+  let bestFloorY = null;
+
+  for (const s of scr.solids) {
+    if (s.w > 36 && footX >= s.x && footX <= s.x + s.w) {
+      if (s.y >= e.y + e.h - 24 && s.y <= e.y + e.h + 24) {
+        if (bestFloorY === null || s.y < bestFloorY) bestFloorY = s.y;
+      }
+    }
+  }
+  if (bestFloorY === null) {
+    for (const p of scr.oneWay) {
+      if (footX >= p.x && footX <= p.x + p.w) {
+        if (p.y >= e.y + e.h - 20 && p.y <= e.y + e.h + 20) {
+          if (bestFloorY === null || p.y < bestFloorY) bestFloorY = p.y;
+        }
+      }
+    }
+  }
+  if (bestFloorY !== null) {
+    e.y = bestFloorY - e.h;
+  }
 }
 
 function damageEnemy(enemy, dmg, hitX, hitY) {
@@ -580,7 +604,7 @@ function stepEnemies(scr) {
       const hx = hero.x + hero.w * 0.5;
       const dx = hx - ex;
       const dist = Math.abs(dx);
-      const sameFloor = Math.abs((hero.y + hero.h) - (e.y + e.h)) < 68;
+      const sameFloor = Math.abs((hero.y + hero.h) - (e.y + e.h)) < 80;
       const canSee = hasGiantLineOfSight(scr, e);
 
       if (canSee) {
@@ -603,6 +627,8 @@ function stepEnemies(scr) {
         if (e.x <= e.minX) { e.x = e.minX; e.vx = Math.abs(e.vx); e.facing = 1; }
         if (e.x + e.w >= e.maxX) { e.x = e.maxX - e.w; e.vx = -Math.abs(e.vx); e.facing = -1; }
       }
+
+      snapEnemyToGround(scr, e);
 
       const slashBox = {
         x: e.facing === 1 ? e.x + e.w * 0.4 : e.x - 22,
@@ -631,22 +657,22 @@ function stepEnemies(scr) {
       const hx = hero.x + hero.w * 0.5;
       const dx = hx - gx;
       const distToHero = Math.abs(dx);
-      const sameFloor = Math.abs((hero.y + hero.h) - (e.y + e.h)) < (e.isBoss ? 140 : 95);
+      const sameFloor = Math.abs((hero.y + hero.h) - (e.y + e.h)) < (e.isBoss ? 150 : 120);
       const canSeeHero = hasGiantLineOfSight(scr, e);
 
       if (canSeeHero) {
         alertGiantAxeman(e);
       } else if (e.alerted && !e.isBoss) {
         e.aggroTimer -= DT;
-        if (e.aggroTimer <= 0 && distToHero > 460) {
+        if (e.aggroTimer <= 0 && distToHero > 520) {
           e.alerted = false;
           e.aiState = "PATROL";
         }
       }
 
       const meleeReach = e.isBoss ? 132 : 98;
-      const chargeMinRange = e.isBoss ? 145 : 115;
-      const chargeMaxRange = e.isBoss ? 460 : 340;
+      const chargeMinRange = e.isBoss ? 110 : 75;
+      const chargeMaxRange = e.isBoss ? 560 : 520;
 
       if (e.aiState === "PATROL" || e.aiState === "WALK") {
         e.animTimer += DT;
@@ -661,7 +687,7 @@ function stepEnemies(scr) {
 
         if (distToHero <= meleeReach && sameFloor) {
           e.aiState = "STAND_WINDUP";
-          e.aiTimer = 0.36;
+          e.aiTimer = 0.34;
         } else if (
           e.chargeCooldown <= 0 &&
           sameFloor &&
@@ -669,7 +695,7 @@ function stepEnemies(scr) {
           distToHero <= chargeMaxRange
         ) {
           e.aiState = "CHARGE_WINDUP";
-          e.aiTimer = 0.44;
+          e.aiTimer = 0.40;
           e.chargeDir = e.facing;
           SFX.beep(125, 0.18, "sawtooth", 0.09, 85);
         } else {
@@ -703,27 +729,27 @@ function stepEnemies(scr) {
         }
         if (e.aiTimer <= 0) {
           e.aiState = "RECOVER";
-          e.aiTimer = 0.45;
+          e.aiTimer = 0.42;
         }
       } else if (e.aiState === "CHARGE_WINDUP") {
         e.aiTimer -= DT;
         e.weaponAngle = -1.55;
         if (e.aiTimer <= 0) {
           e.aiState = "CHARGE_RUN";
-          e.aiTimer = 0.72;
+          e.aiTimer = 1.15;
           e.chargeDistTraveled = 0;
           e.struckThisSwing = false;
-          e.chargeCooldown = 3.2;
+          e.chargeCooldown = 2.6;
           SFX.beep(155, 0.22, "sawtooth", 0.1, 65);
         }
       } else if (e.aiState === "CHARGE_RUN") {
         e.aiTimer -= DT;
-        e.animTimer += DT * 2.6;
+        e.animTimer += DT * 2.4;
         const dir = e.chargeDir || e.facing;
         e.facing = dir;
         e.weaponAngle = Math.sin(e.animTimer * 22) * 1.35;
 
-        const moveStep = dir * (e.chargeSpeed || 245) * DT;
+        const moveStep = dir * (e.chargeSpeed || 122.5) * DT;
         const nextX = Math.max(e.minX, Math.min(e.maxX - e.w, e.x + moveStep));
         const actualMoved = Math.abs(nextX - e.x);
         e.x = nextX;
@@ -748,9 +774,9 @@ function stepEnemies(scr) {
         }
 
         const hitBoundary = actualMoved < Math.abs(moveStep) * 0.25;
-        if (e.aiTimer <= 0 || e.chargeDistTraveled >= (e.chargeMaxDist || 230) || hitBoundary) {
+        if (e.aiTimer <= 0 || e.chargeDistTraveled >= (e.chargeMaxDist || 260) || hitBoundary) {
           e.aiState = "RECOVER";
-          e.aiTimer = 0.62;
+          e.aiTimer = 0.55;
         }
       } else if (e.aiState === "RECOVER") {
         e.aiTimer -= DT;
@@ -759,6 +785,8 @@ function stepEnemies(scr) {
           e.aiState = e.alerted ? "CHASE" : "PATROL";
         }
       }
+
+      snapEnemyToGround(scr, e);
 
       if (rectsOverlap(hero, e)) {
         damageHero(e.atk || Math.round(24 * atkMult), hero.x < e.x ? -1 : 1);
