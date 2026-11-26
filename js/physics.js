@@ -8,10 +8,10 @@ const GUN_RELOAD_TIME = 0.68;     // Seconds pause between bursts
 const BULLET_SPEED_MULT = 0.80;   // -20% bullet speed
 
 // Super Cannon (頂帽大炮) Tuning
-const CANNON_ROUNDS_PER_ROOM = 2;                    // Limited to 2 rounds per room
-const CANNON_DAMAGE = 200;                           // 200 AoE damage
-const CANNON_FUSE_SEC = 1.0;                         // Explodes 1.0 sec after shot
-const CANNON_AOE_RADIUS = 115;                       // Area of effect radius
+const CANNON_ROUNDS_PER_ROOM = 2;                        // Limited to 2 rounds per room
+const CANNON_DAMAGE = 200;                               // 200 AoE damage
+const CANNON_FUSE_SEC = 1.0;                             // Explodes 1.0 sec after shot
+const CANNON_AOE_RADIUS = 115;                           // Area of effect radius
 const CANNON_SPIN_RAD_PER_SEC = (3 * Math.PI * 2) / 0.8; // 3 full rotations per 0.8 sec
 
 const game = {
@@ -114,6 +114,22 @@ function updateCamera() {
   game.camY += (targetY - game.camY) * 0.16;
 }
 
+function canDropThroughOneWay(scr) {
+  if (!hero.grounded || hero.onLadder) return false;
+  const footY = hero.y + hero.h;
+  const onSolid = scr.solids.some(s =>
+    hero.x + hero.w > s.x &&
+    hero.x < s.x + s.w &&
+    Math.abs(footY - s.y) <= 4
+  );
+  if (onSolid) return false;
+  return scr.oneWay.some(p =>
+    hero.x + hero.w > p.x &&
+    hero.x < p.x + p.w &&
+    Math.abs(footY - p.y) <= 6
+  );
+}
+
 function stepHero(input, scr) {
   const GRAVITY = 1380;
   const WALK_SPEED = hero.stats.walkSpeed;
@@ -204,13 +220,14 @@ function stepHero(input, scr) {
     hero.vx = moveDir * WALK_SPEED * 0.75;
   }
 
-  if (input.sHeld && hero.grounded && !hero.onLadder) {
+  const onOneWayOnly = canDropThroughOneWay(scr);
+  if (input.sHeld && onOneWayOnly) {
     hero.downHoldTimer += DT;
   } else {
     hero.downHoldTimer = 0;
   }
 
-  if (((input.jumpPressed && input.sHeld) || hero.downHoldTimer >= 0.14) && hero.grounded && !hero.onLadder) {
+  if (((input.jumpPressed && input.sHeld) || hero.downHoldTimer >= 0.14) && onOneWayOnly) {
     hero.dropThroughTimer = 0.22;
     hero.downHoldTimer = 0;
     hero.grounded = false;
@@ -223,6 +240,14 @@ function stepHero(input, scr) {
 
   resolveCollisions(scr, false);
   hero.x = Math.max(0, Math.min(game.worldW - hero.w, hero.x));
+
+  if (hero.y > game.worldH + 40 && game.state === "PLAY") {
+    hero.hp = 0;
+    game.state = "GAMEOVER";
+    SFX.beep(110, 0.35, "sawtooth", 0.15, 45);
+    SFX.syncBgm();
+    return;
+  }
 
   if (hero.traits.asthma && hero.asthmaPending && hero.grounded) {
     hero.asthmaPending = false;
