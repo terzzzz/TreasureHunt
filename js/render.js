@@ -11,7 +11,21 @@ function getDeviceDateTimeStrings() {
   return { dateStr: `${yyyy}-${mm}-${dd}`, timeStr: `${hh}:${min}` };
 }
 
-function drawNotebookHeaderOverlay() {
+function resolveScreenBackgroundImage(scr) {
+  if (!scr) return null;
+  if (typeof stageManager !== "undefined" && stageManager.bgImages) {
+    const byId = stageManager.bgImages[scr.id];
+    if (byId && byId.loaded) return byId;
+  }
+  const tplKey = scr.bgTemplate || (scr.stageId === "001" || game.stageId === "001" ? "bg001" : null);
+  if (tplKey && typeof STAGE_001_BG_TEMPLATES !== "undefined") {
+    const tplImg = STAGE_001_BG_TEMPLATES[tplKey];
+    if (tplImg && tplImg.loaded) return tplImg;
+  }
+  return null;
+}
+
+function drawNotebookHeaderOverlay(isDarkDungeon = false) {
   const { dateStr, timeStr } = getDeviceDateTimeStrings();
   const stageTitle = (typeof stageManager !== "undefined" && stageManager.data && stageManager.data.stageName)
     ? String(stageManager.data.stageName).toUpperCase()
@@ -24,95 +38,178 @@ function drawNotebookHeaderOverlay() {
   const roomTag = `${stageTitle} — ${floorLabel}`;
 
   ctx.save();
-  ctx.fillStyle = "rgba(45, 55, 72, 0.88)";
+  if (isDarkDungeon) {
+    ctx.fillStyle = "rgba(15, 23, 42, 0.55)";
+    ctx.fillRect(24, 30, W - 48, 22);
+    ctx.strokeStyle = "rgba(250, 204, 21, 0.35)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(24, 30, W - 48, 22);
+  }
+
+  ctx.fillStyle = isDarkDungeon ? "rgba(226, 232, 240, 0.90)" : "rgba(45, 55, 72, 0.88)";
   ctx.font = "bold 12px monospace";
 
   ctx.textAlign = "left";
-  ctx.fillText(`DATE: ${dateStr}`, 34, 46);
+  ctx.fillText(`DATE: ${dateStr}`, 34, 45);
 
   ctx.textAlign = "center";
-  ctx.fillStyle = "#1e293b";
+  ctx.fillStyle = isDarkDungeon ? "#facc15" : "#1e293b";
   ctx.font = "bold 13px monospace";
-  ctx.fillText(roomTag, HALF_W, 46);
+  ctx.fillText(roomTag, HALF_W, 45);
 
   ctx.textAlign = "right";
-  ctx.fillStyle = "rgba(45, 55, 72, 0.88)";
+  ctx.fillStyle = isDarkDungeon ? "rgba(226, 232, 240, 0.90)" : "rgba(45, 55, 72, 0.88)";
   ctx.font = "bold 12px monospace";
-  ctx.fillText(`TIME: ${timeStr}`, W - 34, 46);
+  ctx.fillText(`TIME: ${timeStr}`, W - 34, 45);
   ctx.restore();
 }
 
 function drawActiveScreenBackground(scr) {
-  const customBg = stageManager.bgImages[scr.id];
-  if (customBg && customBg.loaded) {
+  const customBg = resolveScreenBackgroundImage(scr);
+  const isDarkDungeon = Boolean(customBg);
+
+  if (customBg) {
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
     ctx.drawImage(customBg, 0, 0, game.worldW, game.worldH);
-    drawNotebookHeaderOverlay();
-    return;
+    ctx.imageSmoothingEnabled = true;
+
+    // Subtle warm torchlight ambience
+    const flicker = 0.04 + Math.sin(game.elapsedTime * 7.5) * 0.02;
+    ctx.fillStyle = `rgba(251, 146, 60, ${flicker})`;
+    ctx.fillRect(0, 0, game.worldW, game.worldH);
+
+    // Subtle center spine crease
+    ctx.strokeStyle = "rgba(15, 23, 42, 0.45)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(HALF_W, 0);
+    ctx.lineTo(HALF_W, H);
+    ctx.stroke();
+    ctx.restore();
+  } else {
+    const grad = ctx.createLinearGradient(0, 0, W, 0);
+    grad.addColorStop(0.00, "#ede7d8");
+    grad.addColorStop(0.47, "#f7f4eb");
+    grad.addColorStop(0.50, "#d8d0be");
+    grad.addColorStop(0.53, "#f7f4eb");
+    grad.addColorStop(1.00, "#ede7d8");
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+
+    drawRuledPage(0, 0, scr.pageLeft, true);
+    drawRuledPage(HALF_W, 0, scr.pageRight, false);
+
+    ctx.strokeStyle = "rgba(80, 75, 65, 0.45)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(HALF_W, 0);
+    ctx.lineTo(HALF_W, H);
+    ctx.stroke();
   }
 
-  const grad = ctx.createLinearGradient(0, 0, W, 0);
-  grad.addColorStop(0.00, "#ede7d8");
-  grad.addColorStop(0.47, "#f7f4eb");
-  grad.addColorStop(0.50, "#d8d0be");
-  grad.addColorStop(0.53, "#f7f4eb");
-  grad.addColorStop(1.00, "#ede7d8");
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, W, H);
+  drawNotebookHeaderOverlay(isDarkDungeon);
 
-  drawRuledPage(0, 0, scr.pageLeft, true);
-  drawRuledPage(HALF_W, 0, scr.pageRight, false);
-  drawNotebookHeaderOverlay();
-
-  ctx.strokeStyle = "rgba(80, 75, 65, 0.45)";
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(HALF_W, 0);
-  ctx.lineTo(HALF_W, H);
-  ctx.stroke();
-
+  // Platforms & boundary walls
   for (const s of scr.solids) {
-    ctx.fillStyle = s.hatched ? "#f2ede0" : "#1e293b";
-    ctx.fillRect(s.x, s.y, s.w, s.h);
-    ctx.strokeStyle = "#1e293b";
-    ctx.lineWidth = 2.5;
-    ctx.strokeRect(s.x, s.y, s.w, s.h);
+    if (isDarkDungeon) {
+      ctx.fillStyle = s.hatched ? "#1c1917" : "#44403c";
+      ctx.fillRect(s.x, s.y, s.w, s.h);
 
-    if (s.hatched) {
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(s.x, s.y, s.w, s.h);
-      ctx.clip();
-      ctx.strokeStyle = "rgba(30, 41, 59, 0.65)";
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      for (let hx = s.x - s.h; hx < s.x + s.w + s.h; hx += 34) {
-        ctx.moveTo(hx + 16, s.y + 4);
-        ctx.lineTo(hx - 12, s.y + s.h - 4);
+      // Top stone highlight lip so platforms stand out clearly against dark brick walls
+      ctx.fillStyle = s.hatched ? "#57534e" : "#a8a29e";
+      ctx.fillRect(s.x, s.y, s.w, 3);
+
+      ctx.strokeStyle = "#0c0a09";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(s.x, s.y, s.w, s.h);
+
+      // Chiseled stone block joints on horizontal ledges
+      if (!s.hatched && s.w >= 48) {
+        ctx.strokeStyle = "rgba(12, 10, 9, 0.55)";
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        for (let bx = s.x + 32; bx < s.x + s.w - 8; bx += 32) {
+          ctx.moveTo(bx, s.y + 3);
+          ctx.lineTo(bx, s.y + s.h);
+        }
+        ctx.stroke();
       }
-      ctx.stroke();
-      ctx.restore();
+    } else {
+      ctx.fillStyle = s.hatched ? "#f2ede0" : "#1e293b";
+      ctx.fillRect(s.x, s.y, s.w, s.h);
+      ctx.strokeStyle = "#1e293b";
+      ctx.lineWidth = 2.5;
+      ctx.strokeRect(s.x, s.y, s.w, s.h);
+
+      if (s.hatched) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(s.x, s.y, s.w, s.h);
+        ctx.clip();
+        ctx.strokeStyle = "rgba(30, 41, 59, 0.65)";
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        for (let hx = s.x - s.h; hx < s.x + s.w + s.h; hx += 34) {
+          ctx.moveTo(hx + 16, s.y + 4);
+          ctx.lineTo(hx - 12, s.y + s.h - 4);
+        }
+        ctx.stroke();
+        ctx.restore();
+      }
     }
   }
 
+  // Red one-way drop-through hatches
   for (const p of scr.oneWay) {
-    ctx.fillStyle = "#dc2626";
+    ctx.fillStyle = isDarkDungeon ? "#f87171" : "#dc2626";
     ctx.fillRect(p.x, p.y, p.w, 4);
+    ctx.fillStyle = isDarkDungeon ? "#b91c1c" : "#dc2626";
     ctx.fillRect(p.x, p.y + 7, p.w, 2.5);
   }
 
+  // Ladders
   for (const l of scr.ladders) {
-    ctx.strokeStyle = "#1e293b";
-    ctx.lineWidth = 2.5;
-    ctx.beginPath();
-    ctx.moveTo(l.x + 5, l.y);
-    ctx.lineTo(l.x + 5, l.y + l.h);
-    ctx.moveTo(l.x + l.w - 5, l.y);
-    ctx.lineTo(l.x + l.w - 5, l.y + l.h);
-    for (let ry = l.y + 14; ry < l.y + l.h; ry += 22) {
-      ctx.moveTo(l.x + 5, ry);
-      ctx.lineTo(l.x + l.w - 5, ry);
+    if (isDarkDungeon) {
+      ctx.strokeStyle = "#0c0a09";
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.moveTo(l.x + 5, l.y);
+      ctx.lineTo(l.x + 5, l.y + l.h);
+      ctx.moveTo(l.x + l.w - 5, l.y);
+      ctx.lineTo(l.x + l.w - 5, l.y + l.h);
+      for (let ry = l.y + 14; ry < l.y + l.h; ry += 22) {
+        ctx.moveTo(l.x + 5, ry);
+        ctx.lineTo(l.x + l.w - 5, ry);
+      }
+      ctx.stroke();
+
+      ctx.strokeStyle = "#f59e0b";
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(l.x + 5, l.y);
+      ctx.lineTo(l.x + 5, l.y + l.h);
+      ctx.moveTo(l.x + l.w - 5, l.y);
+      ctx.lineTo(l.x + l.w - 5, l.y + l.h);
+      for (let ry = l.y + 14; ry < l.y + l.h; ry += 22) {
+        ctx.moveTo(l.x + 5, ry);
+        ctx.lineTo(l.x + l.w - 5, ry);
+      }
+      ctx.stroke();
+    } else {
+      ctx.strokeStyle = "#1e293b";
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(l.x + 5, l.y);
+      ctx.lineTo(l.x + 5, l.y + l.h);
+      ctx.moveTo(l.x + l.w - 5, l.y);
+      ctx.lineTo(l.x + l.w - 5, l.y + l.h);
+      for (let ry = l.y + 14; ry < l.y + l.h; ry += 22) {
+        ctx.moveTo(l.x + 5, ry);
+        ctx.lineTo(l.x + l.w - 5, ry);
+      }
+      ctx.stroke();
     }
-    ctx.stroke();
   }
 }
 
@@ -140,15 +237,16 @@ function drawSubtleExitMark(scr) {
   const exit = scr.exit;
   if (!exit) return;
 
+  const isDarkDungeon = Boolean(resolveScreenBackgroundImage(scr));
   const isLocked = Boolean(exit.lockedUntilBossDead && !game.bossDefeated);
   if (isLocked) {
     ctx.save();
-    ctx.strokeStyle = "rgba(220, 38, 38, 0.7)";
-    ctx.fillStyle = "rgba(15, 23, 42, 0.25)";
+    ctx.strokeStyle = "rgba(239, 68, 68, 0.85)";
+    ctx.fillStyle = "rgba(15, 23, 42, 0.45)";
     ctx.lineWidth = 2;
     ctx.fillRect(exit.x, exit.y, exit.w, exit.h);
     ctx.strokeRect(exit.x, exit.y, exit.w, exit.h);
-    ctx.fillStyle = "#dc2626";
+    ctx.fillStyle = "#f87171";
     ctx.font = "bold 9px monospace";
     ctx.textAlign = "center";
     ctx.fillText("LOCKED", exit.x + exit.w / 2, exit.y - 6);
@@ -163,7 +261,7 @@ function drawSubtleExitMark(scr) {
 
   if (isVault) {
     ctx.save();
-    ctx.strokeStyle = `rgba(180, 83, 9, ${pulse})`;
+    ctx.strokeStyle = isDarkDungeon ? `rgba(250, 204, 21, ${pulse})` : `rgba(180, 83, 9, ${pulse})`;
     ctx.fillStyle = "rgba(254, 243, 199, 0.28)";
     ctx.lineWidth = 2.5;
     ctx.fillRect(exit.x, exit.y, exit.w, exit.h);
@@ -180,7 +278,7 @@ function drawSubtleExitMark(scr) {
     ctx.textAlign = "center";
     ctx.fillText("FINISH", cx, exit.y - 8);
 
-    ctx.strokeStyle = `rgba(217, 119, 6, ${pulse})`;
+    ctx.strokeStyle = isDarkDungeon ? `rgba(250, 204, 21, ${pulse})` : `rgba(217, 119, 6, ${pulse})`;
     ctx.lineWidth = 2.4;
     ctx.beginPath();
     ctx.moveTo(cx - 4 + wobble, exit.y + exit.h - 32);
@@ -199,8 +297,8 @@ function drawSubtleExitMark(scr) {
   ctx.translate(cx + offsetX, cy);
   if (isUp) ctx.rotate(-Math.PI / 2);
 
-  ctx.strokeStyle = `rgba(30, 41, 59, ${pulse})`;
-  ctx.fillStyle = game.bossArmed ? `rgba(220, 38, 38, ${pulse})` : `rgba(217, 119, 6, ${pulse})`;
+  ctx.strokeStyle = isDarkDungeon ? `rgba(250, 204, 21, ${pulse})` : `rgba(30, 41, 59, ${pulse})`;
+  ctx.fillStyle = game.bossArmed ? `rgba(239, 68, 68, ${pulse})` : `rgba(250, 204, 21, ${pulse})`;
   ctx.lineWidth = 2.4;
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
@@ -219,6 +317,7 @@ function drawSubtleExitMark(scr) {
 }
 
 function drawScreenEntities(scr) {
+  const isDarkDungeon = Boolean(resolveScreenBackgroundImage(scr));
   if (scr.exit) {
     drawSubtleExitMark(scr);
   }
@@ -274,7 +373,7 @@ function drawScreenEntities(scr) {
         ctx.fillStyle = "#dc2626";
         ctx.fillRect(p.x + 12, p.y + bob, 6, 6);
       }
-      ctx.fillStyle = "#1e293b";
+      ctx.fillStyle = isDarkDungeon ? "#facc15" : "#1e293b";
       ctx.font = "bold 9px monospace";
       ctx.textAlign = "center";
       ctx.fillText("頂帽大炮", p.x + p.w * 0.5, p.y - 3 + bob);
@@ -317,13 +416,13 @@ function drawScreenEntities(scr) {
 
   for (const e of scr.enemies) {
     if (!e.alive) continue;
-    if (e.kind === "alien") drawAlienEnemy(e);
+    if (e.kind === "alien") drawAlienEnemy(e, isDarkDungeon);
     else if (e.kind === "blade") drawBladeEnemy(e);
     else if (e.kind === "giant") drawAxeGiant(e);
   }
 }
 
-function drawAlienEnemy(e) {
+function drawAlienEnemy(e, isDarkDungeon = false) {
   ctx.save();
   ctx.translate(e.x + e.w / 2, e.y + e.h);
   ctx.scale(-e.facing, 1);
@@ -353,13 +452,13 @@ function drawAlienEnemy(e) {
   ctx.fillStyle = "#38bdf8";
   ctx.fillRect(e.x, e.y - 10, e.w * Math.max(0, e.hp / e.maxHp), 4);
 
-  ctx.fillStyle = "#0f172a";
+  ctx.fillStyle = isDarkDungeon ? "#facc15" : "#0f172a";
   ctx.font = "bold 9px monospace";
   ctx.textAlign = "center";
   ctx.fillText("頂帽大炮", e.x + e.w / 2, e.y - 14);
 
   if (e.cannonWindingUp) {
-    ctx.fillStyle = "#dc2626";
+    ctx.fillStyle = "#f87171";
     ctx.font = "bold 11px monospace";
     ctx.fillText("FIRE!", e.x + e.w / 2, e.y - 25);
   }
