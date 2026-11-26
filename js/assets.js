@@ -88,8 +88,80 @@ const TRAIT_BODY_ZONES = {
   prosthesis: [0.16, 0.64, 0.72, 0.36]
 };
 
+function loadGiantAxemanSprite(primarySrc, fallbackSrc) {
+  const entry = { img: new Image(), canvas: null, loaded: false };
+
+  function processImage(img) {
+    const w = img.naturalWidth;
+    const h = img.naturalHeight;
+    const off = document.createElement("canvas");
+    off.width = w;
+    off.height = h;
+    const octx = off.getContext("2d");
+    octx.drawImage(img, 0, 0);
+
+    // Strip the dark ground platform at the bottom of the source image (bottom ~22%)
+    const floorCutoffY = Math.floor(h * 0.785);
+    octx.clearRect(0, floorCutoffY, w, h - floorCutoffY);
+
+    let minX = w, minY = floorCutoffY, maxX = 0, maxY = 0;
+    try {
+      const imgData = octx.getImageData(0, 0, w, floorCutoffY);
+      const d = imgData.data;
+      const bgR = d[0], bgG = d[1], bgB = d[2];
+
+      for (let y = 0; y < floorCutoffY; y++) {
+        for (let x = 0; x < w; x++) {
+          const i = (y * w + x) * 4;
+          if (d[i + 3] === 0) continue;
+          const r = d[i], g = d[i + 1], b = d[i + 2];
+          const dist = Math.hypot(r - bgR, g - bgG, b - bgB);
+          const isNearWhite = r > 232 && g > 232 && b > 232;
+
+          if (dist < 28 || isNearWhite) {
+            d[i + 3] = 0;
+          } else {
+            if (dist < 46) d[i + 3] = Math.round(((dist - 28) / 18) * 255);
+            if (x < minX) minX = x;
+            if (x > maxX) maxX = x;
+            if (y < minY) minY = y;
+            if (y > maxY) maxY = y;
+          }
+        }
+      }
+      octx.putImageData(imgData, 0, 0);
+
+      if (maxX > minX && maxY > minY) {
+        const cropW = maxX - minX + 1;
+        const cropH = maxY - minY + 1;
+        const cropped = document.createElement("canvas");
+        cropped.width = cropW;
+        cropped.height = cropH;
+        cropped.getContext("2d").drawImage(off, minX, minY, cropW, cropH, 0, 0, cropW, cropH);
+        entry.canvas = cropped;
+        entry.loaded = true;
+        return;
+      }
+    } catch (_) {}
+
+    entry.canvas = off;
+    entry.loaded = true;
+  }
+
+  entry.img.onload = () => processImage(entry.img);
+  entry.img.onerror = () => {
+    if (fallbackSrc && entry.img.src.indexOf(fallbackSrc) === -1) {
+      entry.img.src = fallbackSrc;
+    } else {
+      entry.loaded = false;
+    }
+  };
+  entry.img.src = primarySrc;
+  return entry;
+}
+
 const EXTRA_SPRITES = {
-  giant:    loadOptionalImage("./char/giant.png"),
+  giant:    loadGiantAxemanSprite("./char/giant.jpeg", "./char/giant.png"),
   giantAxe: loadOptionalImage("./char/giant_axe.png"),
   blade:    loadOptionalImage("./char/blade_enemy.png"),
   chicken:  loadOptionalImage("./char/chicken.png"),
