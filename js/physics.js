@@ -83,11 +83,31 @@ function updateCamera() {
   game.camY += (targetY - game.camY) * 0.16;
 }
 
+// js/physics.js (camera & aiming snippet) //
+function getActiveCamZoom() {
+  if (game.state !== "PLAY" && game.state !== "VICTORY_WALK") return 1.0;
+  return game.debug ? 1.0 : (game.camZoom || 2.0);
+}
+
+function updateCamera() {
+  const zoom = getActiveCamZoom();
+  const viewW = W / zoom;
+  const viewH = H / zoom;
+  const targetX = Math.max(0, Math.min(game.worldW - viewW, hero.x + hero.w / 2 - viewW / 2));
+  const targetY = Math.max(0, Math.min(game.worldH - viewH, hero.y + hero.h / 2 - viewH / 2));
+  game.camX += (targetX - game.camX) * 0.16;
+  game.camY += (targetY - game.camY) * 0.16;
+}
+
 function stepHero(input, scr) {
   const GRAVITY = 1380;
   const WALK_SPEED = hero.stats.walkSpeed;
   const CLIMB_SPEED = hero.stats.climbSpeed;
   const JUMP_VEL = hero.stats.jumpVel;
+  // js/physics.js (mouse-to-world aim conversion) //
+  const zoom = getActiveCamZoom();
+  game.aimWorldX = mouse.screenX / zoom + game.camX + jitterX;
+  game.aimWorldY = mouse.screenY / zoom + game.camY + jitterY;
 
   if (hero.invulnTimer > 0) hero.invulnTimer = Math.max(0, hero.invulnTimer - DT);
   if (hero.gunCooldown > 0) hero.gunCooldown = Math.max(0, hero.gunCooldown - DT);
