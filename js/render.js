@@ -297,7 +297,6 @@ function drawScreenEntities(scr) {
         ctx.drawImage(chestCanvas, drawX, drawY, drawW, drawH);
         ctx.imageSmoothingEnabled = true;
 
-        // Subtle golden glint pulse above the chest
         const sparkle = 0.5 + 0.5 * Math.sin(game.elapsedTime * 6 + variant * 2.1);
         ctx.fillStyle = `rgba(250, 204, 21, ${0.4 + sparkle * 0.6})`;
         ctx.fillRect(drawX + drawW * 0.5 - 1, drawY - 5 - sparkle * 2, 2, 5);
@@ -1120,7 +1119,217 @@ function drawHUD() {
   }
 }
 
+function drawWrappedGuideLines(lines, x, startY, maxWidth, lineHeight, font, color) {
+  ctx.save();
+  ctx.font = font;
+  ctx.fillStyle = color;
+  ctx.textAlign = "left";
+  let curY = startY;
+
+  for (const rawLine of lines) {
+    let line = "";
+    for (let i = 0; i < rawLine.length; i++) {
+      const ch = rawLine[i];
+      const testLine = line + ch;
+      if (ctx.measureText(testLine).width > maxWidth && line.length > 0) {
+        const lastSpace = line.lastIndexOf(" ");
+        if (lastSpace > 4 && /[A-Za-z0-9]/.test(ch)) {
+          ctx.fillText(line.slice(0, lastSpace), x, curY);
+          line = line.slice(lastSpace + 1) + ch;
+        } else {
+          ctx.fillText(line, x, curY);
+          line = ch === " " ? "" : ch;
+        }
+        curY += lineHeight;
+      } else {
+        line = testLine;
+      }
+    }
+    if (line.length > 0) {
+      ctx.fillText(line, x, curY);
+      curY += lineHeight;
+    }
+  }
+  ctx.restore();
+  return curY;
+}
+
+function drawHowToPlayScreen() {
+  setup.uiBoxes.length = 0;
+  drawActiveScreenBackground(STAGE_001_DEFAULT.screens[0]);
+
+  const panelX = 28;
+  const panelY = 16;
+  const panelW = W - 56;
+  const panelH = H - 32;
+
+  ctx.fillStyle = "rgba(15, 23, 42, 0.95)";
+  ctx.fillRect(panelX, panelY, panelW, panelH);
+  ctx.strokeStyle = "#facc15";
+  ctx.lineWidth = 2.5;
+  ctx.strokeRect(panelX, panelY, panelW, panelH);
+
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#facc15";
+  ctx.font = "bold 20px sans-serif";
+  ctx.fillText("HOW TO PLAY   |   玩法說明   |   遊び方", W / 2, panelY + 30);
+
+  const columns = [
+    {
+      lang: "ENGLISH",
+      accent: "#38bdf8",
+      goalTitle: "OBJECTIVE",
+      goalLines: [
+        "Survive infinite dungeon floors. After 10+ rooms, press [B] to face the Boss, then claim the Treasure Vault!"
+      ],
+      ctrlTitle: "CONTROLS",
+      ctrlLines: [
+        "• A / D : Move Left / Right",
+        "• W / S : Climb Ladder (S+SPACE: Drop)",
+        "• SPACE : Jump",
+        "• Mouse + L-Click : 5-Burst Gun",
+        "• R-Click : Throw Bone (15% Enemy HP)",
+        "• F : Super Cannon (2/Room, 200 AoE)",
+        "• M : Mute BGM  |  ESC : Char Select"
+      ],
+      tipTitle: "TRAITS & RELICS",
+      tipLines: [
+        "• Pick 1 / 3 / 5 traits by difficulty; each alters speed, sight, hearing, or stamina.",
+        "• Defeat Room 0's Hat Alien to loot the Super Cannon Hat! Eat Chicken (+50 HP, +2 Bones)."
+      ]
+    },
+    {
+      lang: "繁體中文",
+      accent: "#facc15",
+      goalTitle: "遊戲目標",
+      goalLines: [
+        "闖過無盡地牢關卡！通過 10 房後按 [B] 召喚首領 (BOSS)，擊敗首領即可進入寶庫奪取珍寶！"
+      ],
+      ctrlTitle: "操作方式",
+      ctrlLines: [
+        "• A / D ：左右移動",
+        "• W / S ：攀爬梯子 (S+空白鍵 下跳)",
+        "• 空白鍵 ：跳躍",
+        "• 滑鼠瞄準 + 左鍵 ：5連發機槍",
+        "• 滑鼠右鍵 ：投擲骨頭 (扣敵15%HP)",
+        "• F 鍵 ：頂帽大炮 (每房2發，200範圍傷)",
+        "• M 鍵 ：靜音切換  |  ESC ：返回選角"
+      ],
+      tipTitle: "特質與道具",
+      tipLines: [
+        "• 依難度選擇 1 / 3 / 5 項身體特質，每項皆會改變速度、視野、聽覺或哮喘體力。",
+        "• 擊敗起始房「頂帽外星人」可奪取頂帽大炮！吃烤雞回復 50 HP 並加 2 骨頭。"
+      ]
+    },
+    {
+      lang: "日本語",
+      accent: "#4ade80",
+      goalTitle: "ゲーム目的",
+      goalLines: [
+        "無限ダンジョンを突破しよう！10部屋クリア後に [B] でボス戦へ挑み、撃破して宝物庫の財宝を獲得！"
+      ],
+      ctrlTitle: "操作方法",
+      ctrlLines: [
+        "• A / D ：左右移動",
+        "• W / S ：はしご昇降 (S+SPACE 降下)",
+        "• SPACE ：ジャンプ",
+        "• マウス照準 + 左クリック ：5連射銃",
+        "• 右クリック ：骨投げ (敵現在HPの15%傷)",
+        "• F キー ：シルクハット大砲 (各部屋2発)",
+        "• M キー ：消音切替  |  ESC ：キャラ選択"
+      ],
+      tipTitle: "特性とアイテム",
+      tipLines: [
+        "• 難易度別に 1 / 3 / 5 個の特性を選択。移動速度・視界・聴覚・スタミナが変化！",
+        "• 最初の部屋のハット星人を倒すとシルクハット大砲を入手！チキンでHP50回復＆骨+2。"
+      ]
+    }
+  ];
+
+  const colGap = 12;
+  const innerX = panelX + 14;
+  const innerW = panelW - 28;
+  const colW = Math.floor((innerW - colGap * 2) / 3);
+  const colY = panelY + 46;
+  const colH = panelH - 114;
+
+  columns.forEach((col, idx) => {
+    const cx = innerX + idx * (colW + colGap);
+    ctx.fillStyle = "rgba(30, 41, 59, 0.92)";
+    ctx.fillRect(cx, colY, colW, colH);
+    ctx.strokeStyle = col.accent;
+    ctx.lineWidth = 1.8;
+    ctx.strokeRect(cx, colY, colW, colH);
+
+    ctx.fillStyle = "rgba(15, 23, 42, 0.95)";
+    ctx.fillRect(cx, colY, colW, 28);
+    ctx.fillStyle = col.accent;
+    ctx.font = "bold 14px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(col.lang, cx + colW / 2, colY + 19);
+
+    const padX = 10;
+    const textMaxW = colW - padX * 2;
+    let yCursor = colY + 46;
+
+    ctx.textAlign = "left";
+    ctx.fillStyle = col.accent;
+    ctx.font = "bold 12px sans-serif";
+    ctx.fillText(`▸ ${col.goalTitle}`, cx + padX, yCursor);
+    yCursor = drawWrappedGuideLines(col.goalLines, cx + padX, yCursor + 16, textMaxW, 15, "11.5px sans-serif", "#f8fafc");
+
+    yCursor += 8;
+    ctx.fillStyle = col.accent;
+    ctx.font = "bold 12px sans-serif";
+    ctx.fillText(`▸ ${col.ctrlTitle}`, cx + padX, yCursor);
+    yCursor = drawWrappedGuideLines(col.ctrlLines, cx + padX, yCursor + 16, textMaxW, 16, "11.5px sans-serif", "#e2e8f0");
+
+    yCursor += 8;
+    ctx.fillStyle = col.accent;
+    ctx.font = "bold 12px sans-serif";
+    ctx.fillText(`▸ ${col.tipTitle}`, cx + padX, yCursor);
+    drawWrappedGuideLines(col.tipLines, cx + padX, yCursor + 16, textMaxW, 15, "11.5px sans-serif", "#cbd5e1");
+  });
+
+  const backBtnX = panelX + 14;
+  const backBtnY = panelY + panelH - 56;
+  const backBtnW = panelW - 28;
+  const backBtnH = 44;
+
+  ctx.fillStyle = "#16a34a";
+  ctx.fillRect(backBtnX, backBtnY, backBtnW, backBtnH);
+  ctx.strokeStyle = "#86efac";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(backBtnX, backBtnY, backBtnW, backBtnH);
+
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "bold 15px sans-serif";
+  ctx.fillText(
+    "BACK TO CHARACTER SELECT   |   返回角色選擇   |   キャラクター選択へ戻る   [ESC / CLICK]",
+    W / 2,
+    backBtnY + 27
+  );
+  ctx.textAlign = "left";
+
+  setup.uiBoxes.push({
+    x: backBtnX,
+    y: backBtnY,
+    w: backBtnW,
+    h: backBtnH,
+    onClick: () => {
+      setup.showHowToPlay = false;
+      SFX.beep(420, 0.08, "square", 0.07);
+    }
+  });
+}
+
 function drawSelectScreen() {
+  if (setup.showHowToPlay) {
+    drawHowToPlayScreen();
+    return;
+  }
+
   setup.uiBoxes.length = 0;
   drawActiveScreenBackground(STAGE_001_DEFAULT.screens[0]);
 
@@ -1137,7 +1346,7 @@ function drawSelectScreen() {
 
   ctx.fillStyle = "#cbd5e1";
   ctx.font = "12px monospace";
-  ctx.fillText(`ASDW MOVE/JUMP/LADDER  |  MOUSE AIM + L-CLICK ${GUN_BURST_COUNT}-BURST GUN  |  R-CLICK BONE  |  F CANNON BALL (2/ROOM)  |  [B] BOSS AFTER 10 ROOMS`, W / 2, 68);
+  ctx.fillText(`ASDW MOVE/JUMP/LADDER  |  MOUSE AIM + L-CLICK ${GUN_BURST_COUNT}-BURST GUN  |  R-CLICK BONE  |  F CANNON BALL (2/ROOM)  |  [?] HOW TO PLAY`, W / 2, 68);
 
   const diffBtns = [
     { id: "NORMAL",   label: "NORMAL (1) [N]",   x: W / 2 - 345, y: 82, w: 216, h: 34 },
@@ -1265,9 +1474,9 @@ function drawSelectScreen() {
   ctx.font = "11px monospace";
   ctx.fillText(`SPD:${Math.round(previewStats.walkSpeed)}  HP:${previewStats.maxHp}`, prevX + prevW / 2, prevY + 330);
 
-  const btnX = W / 2 - 210;
+  const btnX = startX;
   const btnY = 496;
-  const btnW = 420;
+  const btnW = cardW;
   const btnH = 52;
   ctx.fillStyle = ready ? "#16a34a" : "#334155";
   ctx.fillRect(btnX, btnY, btnW, btnH);
@@ -1277,11 +1486,60 @@ function drawSelectScreen() {
 
   ctx.fillStyle = ready ? "#ffffff" : "#94a3b8";
   ctx.font = "bold 18px monospace";
-  ctx.fillText(ready ? "START INFINITE RUN [ENTER]" : `SELECT ${needed} TRAIT(S) TO START`, W / 2, btnY + 32);
+  ctx.fillText(ready ? "START INFINITE RUN [ENTER]" : `SELECT ${needed} TRAIT(S) TO START`, btnX + btnW / 2, btnY + 32);
 
   if (ready) {
     setup.uiBoxes.push({ x: btnX, y: btnY, w: btnW, h: btnH, onClick: () => startStageWithSelectedTraits() });
   }
 
+  // HOW TO PLAY button (English / 繁體中文 / 日本語) aligned under Hunter Preview
+  const howX = prevX;
+  const howY = 496;
+  const howW = prevW;
+  const howH = 52;
+
+  ctx.fillStyle = "#1d4ed8";
+  ctx.fillRect(howX, howY, howW, howH);
+  ctx.strokeStyle = "#93c5fd";
+  ctx.lineWidth = 2.2;
+  ctx.strokeRect(howX, howY, howW, howH);
+
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "bold 14px monospace";
+  ctx.fillText("HOW TO PLAY [?]", howX + howW / 2, howY + 22);
+
+  ctx.fillStyle = "#fef08a";
+  ctx.font = "bold 12px sans-serif";
+  ctx.fillText("玩法說明 ・ 遊び方", howX + howW / 2, howY + 41);
+
+  setup.uiBoxes.push({
+    x: howX,
+    y: howY,
+    w: howW,
+    h: howH,
+    onClick: () => {
+      setup.showHowToPlay = true;
+      SFX.beep(540, 0.08, "square", 0.07);
+    }
+  });
+
   ctx.textAlign = "left";
 }
+
+window.addEventListener("keydown", (e) => {
+  if (typeof game === "undefined" || game.state !== "SELECT" || typeof setup === "undefined") return;
+
+  if (setup.showHowToPlay) {
+    if (["Escape", "Enter", " ", "?", "/", "F1", "t", "T"].includes(e.key)) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      setup.showHowToPlay = false;
+      SFX.beep(420, 0.08, "square", 0.07);
+    }
+  } else if (["?", "F1", "t", "T"].includes(e.key)) {
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    setup.showHowToPlay = true;
+    SFX.beep(540, 0.08, "square", 0.07);
+  }
+}, true);
