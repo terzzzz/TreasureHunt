@@ -1,6 +1,8 @@
 // js/assets.js //
 "use strict";
 
+const BGM_MASTER_VOLUME = 0.40; // 40% of actual volume for all game music
+
 function loadKeyedSprite(src, keyBg = true, eraseOriginalGun = false) {
   const entry = { img: new Image(), canvas: null, loaded: false };
   entry.img.onload = () => {
@@ -407,14 +409,23 @@ async function initStage001() {
   if (stageManager.data.bgm) {
     const audio = new Audio(`${stageManager.stageFolder}/${stageManager.data.bgm}`);
     audio.loop = true;
-    audio.volume = 0.45;
+    audio.volume = BGM_MASTER_VOLUME;
     stageManager.bgmAudio = audio;
+    SFX.syncBgm();
   }
+}
+
+function createTitleBgmAudio() {
+  const audio = new Audio("./BGM/char_select.mp3");
+  audio.loop = true;
+  audio.volume = BGM_MASTER_VOLUME;
+  return audio;
 }
 
 const SFX = {
   ctx: null,
   muted: false,
+  selectBgm: createTitleBgmAudio(),
   unlock() {
     if (!this.ctx) {
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -426,13 +437,40 @@ const SFX = {
     this.syncBgm();
   },
   syncBgm() {
-    const bgm = stageManager.bgmAudio;
-    if (!bgm) return;
-    if (this.muted || game.state !== "PLAY") {
-      bgm.pause();
+    const stageBgm = typeof stageManager !== "undefined" ? stageManager.bgmAudio : null;
+    const titleBgm = this.selectBgm;
+    const state = typeof game !== "undefined" ? game.state : "SELECT";
+
+    if (this.muted) {
+      if (titleBgm && !titleBgm.paused) titleBgm.pause();
+      if (stageBgm && !stageBgm.paused) stageBgm.pause();
+      return;
+    }
+
+    if (state === "SELECT") {
+      if (stageBgm && !stageBgm.paused) {
+        stageBgm.pause();
+        stageBgm.currentTime = 0;
+      }
+      if (titleBgm) {
+        titleBgm.volume = BGM_MASTER_VOLUME;
+        if (titleBgm.paused) titleBgm.play().catch(() => {});
+      }
+    } else if (state === "PLAY" || state === "VICTORY_WALK") {
+      if (titleBgm && !titleBgm.paused) {
+        titleBgm.pause();
+        titleBgm.currentTime = 0;
+      }
+      if (stageBgm) {
+        const traitScale = (typeof hero !== "undefined" && hero.stats?.bgmVolumeScale != null)
+          ? hero.stats.bgmVolumeScale
+          : 1.0;
+        stageBgm.volume = Math.max(0, Math.min(1, BGM_MASTER_VOLUME * traitScale));
+        if (stageBgm.paused) stageBgm.play().catch(() => {});
+      }
     } else {
-      bgm.volume = Math.max(0, Math.min(1, 0.45 * (hero.stats?.bgmVolumeScale ?? 1.0)));
-      bgm.play().catch(() => {});
+      if (titleBgm && !titleBgm.paused) titleBgm.pause();
+      if (stageBgm && !stageBgm.paused) stageBgm.pause();
     }
   },
 
@@ -483,6 +521,13 @@ const SFX = {
     }
   }
 };
+
+// Attempt title BGM immediately at game start and unlock on first user interaction
+SFX.syncBgm();
+["pointerdown", "keydown"].forEach((evt) => {
+  window.addEventListener(evt, () => SFX.unlock(), { passive: true });
+});
+setInterval(() => SFX.syncBgm(), 250);
 
 initTraitsJson();
 initStage001();
