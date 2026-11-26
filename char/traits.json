@@ -1,4 +1,5 @@
-//* traits.json *//
+// char/traits.json //
+
 {
   "baseHunter": {
     "walkSpeed": 210,
