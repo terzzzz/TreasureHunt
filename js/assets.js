@@ -88,7 +88,7 @@ const TRAIT_BODY_ZONES = {
   prosthesis: [0.16, 0.64, 0.72, 0.36]
 };
 
-function loadGiantAxemanSprite(primarySrc, fallbackSrc) {
+function loadGroundEnemySprite(primarySrc, fallbackSrc, floorCutoffRatio = 0.785) {
   const entry = { img: new Image(), canvas: null, loaded: false };
 
   function processImage(img) {
@@ -100,8 +100,8 @@ function loadGiantAxemanSprite(primarySrc, fallbackSrc) {
     const octx = off.getContext("2d");
     octx.drawImage(img, 0, 0);
 
-    // Strip the dark ground platform at the bottom of the source image (bottom ~22%)
-    const floorCutoffY = Math.floor(h * 0.785);
+    // Strip the dark ground strip at the bottom of the source image
+    const floorCutoffY = Math.floor(h * floorCutoffRatio);
     octx.clearRect(0, floorCutoffY, w, h - floorCutoffY);
 
     let minX = w, minY = floorCutoffY, maxX = 0, maxY = 0;
@@ -161,9 +161,9 @@ function loadGiantAxemanSprite(primarySrc, fallbackSrc) {
 }
 
 const EXTRA_SPRITES = {
-  giant:    loadGiantAxemanSprite("./char/giant.jpeg", "./char/giant.png"),
+  giant:    loadGroundEnemySprite("./char/giant.jpeg", "./char/giant.png", 0.785),
   giantAxe: loadOptionalImage("./char/giant_axe.png"),
-  blade:    loadOptionalImage("./char/blade_enemy.png"),
+  blade:    loadGroundEnemySprite("./char/blade.jpeg", "./char/blade_enemy.png", 0.785),
   chicken:  loadOptionalImage("./char/chicken.png"),
   bone:     loadOptionalImage("./char/bone.png"),
   hat:      loadOptionalImage("./char/hat.png"),
