@@ -660,8 +660,13 @@ function drawLayeredCharacter(footX, footY, scaleFactor, activeTraits, timeSec, 
     ctx.stroke();
 
     if (activeTraits.blind) {
-      ctx.fillStyle = "#0f172a";
-      ctx.fillRect(-1, -50, 8, 4);
+      ctx.fillStyle = "#ffffff";
+      ctx.strokeStyle = "#1e293b";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(3.2, -48.5, 2.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
     }
     if (activeTraits.deaf) {
       ctx.fillStyle = "#38bdf8";
