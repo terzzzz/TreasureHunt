@@ -301,7 +301,6 @@ function drawScreenEntities(scr) {
 function drawAlienEnemy(e) {
   ctx.save();
   ctx.translate(e.x + e.w / 2, e.y + e.h);
-  // Source image faces left (-1), so scale(-e.facing, 1) turns it to always face the player
   ctx.scale(-e.facing, 1);
 
   if (EXTRA_SPRITES.alien.loaded) {
@@ -324,7 +323,6 @@ function drawAlienEnemy(e) {
   }
   ctx.restore();
 
-  // HP Bar & Label
   ctx.fillStyle = "#1e293b";
   ctx.fillRect(e.x, e.y - 10, e.w, 4);
   ctx.fillStyle = "#38bdf8";
@@ -368,7 +366,6 @@ function drawBladeEnemy(e) {
     ctx.stroke();
   }
 
-  // Sword slash arc when striking
   if (e.slashTimer > 0) {
     ctx.strokeStyle = "rgba(220, 38, 38, 0.88)";
     ctx.lineWidth = 4;
@@ -379,7 +376,6 @@ function drawBladeEnemy(e) {
 
   ctx.restore();
 
-  // HP Bar
   ctx.fillStyle = "#1e293b";
   ctx.fillRect(e.x, e.y - 9, e.w, 4);
   ctx.fillStyle = e.alerted ? "#dc2626" : "#64748b";
@@ -443,7 +439,6 @@ function drawAxeGiant(g) {
     ctx.restore();
   }
 
-  // Sweeping slash arc visual during standing or charging axe swing
   if (isSwinging) {
     const arcRadius = g.weaponLength || 68;
     ctx.strokeStyle = isCharging ? "rgba(245, 158, 11, 0.85)" : "rgba(220, 38, 38, 0.80)";
@@ -455,7 +450,6 @@ function drawAxeGiant(g) {
 
   ctx.restore();
 
-  // HP Bar & Aggro / Charge Telegraph Indicator
   ctx.fillStyle = "#1e293b";
   ctx.fillRect(g.x, g.y - 12, g.w, 6);
   ctx.fillStyle = g.isBoss ? "#f59e0b" : (g.alerted ? "#dc2626" : "#64748b");
@@ -562,7 +556,6 @@ function drawAimingGunArm(localAimAngle, hasGunRecoil, isTremor) {
 
 function drawEquippedCannonHat(topHeadY) {
   ctx.save();
-  // Source hat image faces left (-1), flip horizontally so barrel points forward with hero
   ctx.scale(-1, 1);
   if (EXTRA_SPRITES.hat.loaded) {
     const src = EXTRA_SPRITES.hat.canvas || EXTRA_SPRITES.hat.img;
@@ -738,7 +731,7 @@ function drawHero() {
     selectedOrder: hero.stats.selectedOrder,
     showAimGun: game.state === "PLAY",
     localAimAngle,
-    gunRecoil: hero.gunCooldown > 0.02
+    gunRecoil: hero.gunCooldown > GUN_SHOT_INTERVAL * 0.45
   });
 
   if (hero.traits.asthma && (hero.asthma > 2 || hero.asthmaStun > 0)) {
@@ -877,8 +870,8 @@ function drawHUD() {
     ctx.fillText(`GUN:RLD`, 340, 17);
   } else {
     ctx.fillStyle = "#38bdf8";
-    const roundsLeft = hero.gunBurstRemaining > 0 ? hero.gunBurstRemaining : 7;
-    ctx.fillText(`GUN:${roundsLeft}/7`, 340, 17);
+    const roundsLeft = hero.gunBurstRemaining > 0 ? hero.gunBurstRemaining : GUN_BURST_COUNT;
+    ctx.fillText(`GUN:${roundsLeft}/${GUN_BURST_COUNT}`, 340, 17);
   }
 
   ctx.fillStyle = "#fef08a";
@@ -895,7 +888,6 @@ function drawHUD() {
     ctx.fillText(`HAT:${hero.hatCooldown.toFixed(1)}`, 454, 17);
   }
 
-  // Room transition counter & compound +2% monster attack multiplier
   const atkMult = getCompoundAttackMultiplier(game.transitions);
   ctx.fillStyle = "#38bdf8";
   const stageBadge = game.roomType === "BOSS"
@@ -922,7 +914,6 @@ function drawHUD() {
     onClick: () => { if (typeof SFX.toggleMute === "function") SFX.toggleMute(); }
   });
 
-  // Boss HP bar at top during BOSS room
   if (game.roomType === "BOSS" && game.activeScreen) {
     const boss = game.activeScreen.enemies.find(e => e.isBoss && e.alive);
     if (boss) {
@@ -948,7 +939,6 @@ function drawHUD() {
     }
   }
 
-  // After 10 transitions, show clickable/tappable button to challenge the Boss in the next stage
   if (game.state === "PLAY" && game.roomType === "RANDOM" && game.transitions >= 10) {
     const btnW = 248;
     const btnH = 32;
@@ -1049,7 +1039,7 @@ function drawSelectScreen() {
 
   ctx.fillStyle = "#cbd5e1";
   ctx.font = "12px monospace";
-  ctx.fillText("ASDW MOVE/JUMP/LADDER  |  MOUSE AIM + L-CLICK 7-BURST GUN  |  R-CLICK BONE  |  F HAT MISSILE  |  [B] BOSS AFTER 10 ROOMS", W / 2, 68);
+  ctx.fillText(`ASDW MOVE/JUMP/LADDER  |  MOUSE AIM + L-CLICK ${GUN_BURST_COUNT}-BURST GUN  |  R-CLICK BONE  |  F HAT MISSILE  |  [B] BOSS AFTER 10 ROOMS`, W / 2, 68);
 
   const diffBtns = [
     { id: "NORMAL",   label: "NORMAL (1) [N]",   x: W / 2 - 345, y: 82, w: 216, h: 34 },
