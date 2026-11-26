@@ -619,7 +619,7 @@ function stepEnemies(scr) {
         e.animTimer += DT * 1.8;
         const dir = dx < 0 ? -1 : 1;
         e.facing = dir;
-        const runSpeed = e.chaseSpeed || 235;
+        const runSpeed = e.chaseSpeed || 164.5;
         e.x = Math.max(e.minX, Math.min(e.maxX - e.w, e.x + dir * runSpeed * DT));
       } else {
         e.animTimer += DT;
