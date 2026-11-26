@@ -19,6 +19,12 @@ const ALIEN_SAFE_START_SEC = 10.0;   // Holds fire for the first 10 seconds of g
 const ALIEN_SIGHT_RANGE = 220;       // Fits inside the 2x zoomed camera (240px half-view)
 const ALIEN_CANNON_SPEED_MULT = 0.70; // -30% cannon projectile speed
 
+const TREASURE_RELIC_DEFS = [
+  { variant: 0, label: "GOLD COIN CHEST",     score: 1500, w: 50, h: 38 },
+  { variant: 1, label: "ROYAL JEWEL BOX",     score: 2000, w: 46, h: 38 },
+  { variant: 2, label: "CRYSTAL RELIC CHEST", score: 2500, w: 48, h: 38 }
+];
+
 const game = {
   state: "SELECT",
   debug: false,
@@ -86,6 +92,75 @@ function spawnParticles(x, y, color, count = 8, speed = 160) {
   }
 }
 
+function scatterTreasureRoomItems(scr) {
+  if (!scr || scr._treasureScattered) return;
+  const isTreasureVault = game.roomType === "TREASURE" || Boolean(scr.isFinal || scr.exit?.label === "VAULT");
+  if (!isTreasureVault) return;
+
+  scr._treasureScattered = true;
+  scr.pickups = (scr.pickups || []).filter(p => p.type !== "treasure");
+
+  const spots = [];
+  const addSurfaceSpots = (surfaces) => {
+    for (const s of (surfaces || [])) {
+      if (s.w < 68 || s.y < 110 || s.y > game.worldH - 16) continue;
+      const margin = 28;
+      const step = 64;
+      for (let cx = s.x + margin; cx <= s.x + s.w - margin; cx += step) {
+        const nearStart = cx < 175 && Math.abs(s.y - (game.worldH - 34)) < 50;
+        const nearExit = scr.exit &&
+          cx >= scr.exit.x - 36 &&
+          cx <= scr.exit.x + scr.exit.w + 36 &&
+          Math.abs(s.y - (scr.exit.y + scr.exit.h)) < 64;
+        if (!nearStart && !nearExit) {
+          spots.push({ x: cx, surfaceY: s.y });
+        }
+      }
+    }
+  };
+
+  addSurfaceSpots(scr.solids);
+  addSurfaceSpots(scr.oneWay);
+
+  // Fallback spots along the main floor if a custom vault layout is compact
+  if (spots.length < 3) {
+    const floorY = game.worldH - 34;
+    [240, 420, 600].forEach(fx => spots.push({ x: fx, surfaceY: floorY }));
+  }
+
+  // Fisher-Yates shuffle so the 3 chests scatter to different spots every run
+  for (let i = spots.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [spots[i], spots[j]] = [spots[j], spots[i]];
+  }
+
+  const chosen = [];
+  for (const spot of spots) {
+    if (chosen.every(c => Math.hypot(c.x - spot.x, c.surfaceY - spot.surfaceY) >= 56)) {
+      chosen.push(spot);
+      if (chosen.length === 3) break;
+    }
+  }
+  while (chosen.length < 3) {
+    chosen.push(spots[chosen.length % spots.length]);
+  }
+
+  TREASURE_RELIC_DEFS.forEach((def, idx) => {
+    const spot = chosen[idx];
+    scr.pickups.push({
+      type: "treasure",
+      treasureVariant: def.variant,
+      label: def.label,
+      scoreValue: def.score,
+      x: Math.round(spot.x - def.w * 0.5),
+      y: Math.round(spot.surfaceY - def.h),
+      w: def.w,
+      h: def.h,
+      collected: false
+    });
+  });
+}
+
 function damageHero(amount, knockDir) {
   if (hero.invulnTimer > 0 || game.state !== "PLAY") return;
   hero.hp = Math.max(0, hero.hp - amount);
@@ -141,11 +216,12 @@ function stepHero(input, scr) {
   const CLIMB_SPEED = hero.stats.climbSpeed;
   const JUMP_VEL = hero.stats.jumpVel;
 
-  // Refill Super Cannon ammo to 2 rounds whenever entering a new room
+  // Refill Super Cannon ammo to 2 rounds whenever entering a new room & scatter vault loot if in Treasure Room
   if (game._cannonRoomRef !== scr) {
     game._cannonRoomRef = scr;
     hero.hatMaxAmmo = CANNON_ROUNDS_PER_ROOM;
     hero.hatAmmo = hero.hasMissileHat ? CANNON_ROUNDS_PER_ROOM : 0;
+    scatterTreasureRoomItems(scr);
   }
 
   if (hero.invulnTimer > 0) hero.invulnTimer = Math.max(0, hero.invulnTimer - DT);
@@ -419,7 +495,6 @@ function detonateCannonBall(m, scr) {
   SFX.beep(95, 0.34, "sawtooth", 0.16, 36);
 
   if (m.fromEnemy) {
-    // Alien's cannonball kills the hero immediately if caught inside the explosion radius
     const closestX = Math.max(hero.x, Math.min(m.x, hero.x + hero.w));
     const closestY = Math.max(hero.y, Math.min(m.y, hero.y + hero.h));
     const distToHero = Math.hypot(m.x - closestX, m.y - closestY);
@@ -446,6 +521,8 @@ function detonateCannonBall(m, scr) {
 }
 
 function stepProjectilesAndPickups(scr) {
+  scatterTreasureRoomItems(scr);
+
   for (const p of scr.pickups) {
     if (p.collected) continue;
     if (rectsOverlap(hero, p)) {
@@ -469,9 +546,12 @@ function stepProjectilesAndPickups(scr) {
         spawnParticles(p.x + p.w / 2, p.y + p.h / 2, "#dc2626", 10, 140);
         SFX.beep(660, 0.14, "sine", 0.1, 1040);
       } else if (p.type === "treasure") {
-        game.score += 1500;
-        spawnParticles(p.x + p.w / 2, p.y + p.h / 2, "#ffd700", 20, 200);
-        SFX.beep(523, 0.25, "square", 0.12, 1046);
+        const pts = p.scoreValue || 1500;
+        game.score += pts;
+        const burstColor = p.treasureVariant === 2 ? "#38bdf8" : (p.treasureVariant === 1 ? "#f43f5e" : "#ffd700");
+        spawnParticles(p.x + p.w / 2, p.y + p.h / 2, burstColor, 22, 210);
+        spawnParticles(p.x + p.w / 2, p.y + p.h / 2, "#facc15", 14, 170);
+        SFX.beep(523 + (p.treasureVariant || 0) * 130, 0.25, "square", 0.12, 1046);
       }
     }
   }
@@ -535,7 +615,6 @@ function stepProjectilesAndPickups(scr) {
     if (hitEnemy) game.bones.splice(i, 1);
   }
 
-  // Physics bouncing & rolling cannonball (3 rotations per 0.8s, explodes after 1.0s, never drops down ladders)
   for (let i = game.missiles.length - 1; i >= 0; i--) {
     const m = game.missiles[i];
     const r = m.r || 11;
@@ -546,7 +625,6 @@ function stepProjectilesAndPickups(scr) {
       spawnParticles(m.x, m.y - r * 0.6, "#fb923c", 1, 55);
     }
 
-    // Horizontal step & wall bounce
     m.x += m.vx * DT;
     if (m.x - r < 24) {
       m.x = 24 + r;
@@ -574,7 +652,6 @@ function stepProjectilesAndPickups(scr) {
       }
     }
 
-    // Gravity & vertical bounce / roll (treats both solids AND oneWay ladder hatches as solid ground)
     const prevBottom = m.y + r;
     m.vy = Math.min(m.vy + 1240 * DT, 820);
     m.y += m.vy * DT;
@@ -611,7 +688,6 @@ function stepProjectilesAndPickups(scr) {
       }
     }
 
-    // Bounce off entities without prematurely detonating before 1.0s
     if (m.fromEnemy) {
       if (m.x + r > hero.x && m.x - r < hero.x + hero.w && m.y + r > hero.y && m.y - r < hero.y + hero.h) {
         const bounceDir = (m.x < hero.x + hero.w * 0.5) ? -1 : 1;
@@ -774,7 +850,6 @@ function stepEnemies(scr) {
       e.facing = dx < 0 ? -1 : 1;
       snapEnemyToGround(scr, e);
 
-      // Alien holds fire for first 10s, uses shorter sight range (220px), and shoots 30% slower cannonballs
       if (!e.hasFiredCannon && game.state === "PLAY" && e.activeTimer >= ALIEN_SAFE_START_SEC) {
         const inSight = Math.abs(dx) <= ALIEN_SIGHT_RANGE && dy <= 110;
         const shouldEngage = inSight || e.hp < e.maxHp;
