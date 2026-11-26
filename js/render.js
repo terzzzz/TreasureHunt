@@ -13,11 +13,15 @@ function getDeviceDateTimeStrings() {
 
 function drawNotebookHeaderOverlay() {
   const { dateStr, timeStr } = getDeviceDateTimeStrings();
-  const roomTag = game.roomType === "BOSS"
+  const stageTitle = (typeof stageManager !== "undefined" && stageManager.data && stageManager.data.stageName)
+    ? String(stageManager.data.stageName).toUpperCase()
+    : "RUIN CAVE";
+  const floorLabel = game.roomType === "BOSS"
     ? "BOSS CHAMBER"
     : (game.roomType === "TREASURE"
       ? "TREASURE VAULT"
-      : (game.transitions === 0 ? "STAGE 001 — ENTRY" : `FLOOR ${String(game.transitions).padStart(2, "0")}`));
+      : (game.transitions === 0 ? "ENTRY" : `FLOOR ${String(game.transitions).padStart(2, "0")}`));
+  const roomTag = `${stageTitle} — ${floorLabel}`;
 
   ctx.save();
   ctx.fillStyle = "rgba(45, 55, 72, 0.88)";
@@ -332,6 +336,12 @@ function drawAlienEnemy(e) {
   ctx.font = "bold 9px monospace";
   ctx.textAlign = "center";
   ctx.fillText("頂帽大炮", e.x + e.w / 2, e.y - 14);
+
+  if (e.cannonWindingUp) {
+    ctx.fillStyle = "#dc2626";
+    ctx.font = "bold 11px monospace";
+    ctx.fillText("FIRE!", e.x + e.w / 2, e.y - 25);
+  }
   ctx.textAlign = "left";
 }
 
@@ -565,7 +575,7 @@ function drawEquippedCannonHat(topHeadY) {
     ctx.drawImage(src, -hatW * 0.56, topHeadY - hatH + 5, hatW, hatH);
     ctx.imageSmoothingEnabled = true;
   } else {
-    const ready = hero.hatCooldown <= 0;
+    const ready = hero.hatAmmo > 0;
     ctx.fillStyle = ready ? "#facc15" : "#854d0e";
     ctx.fillRect(-10, topHeadY - 4, 20, 4);
     ctx.fillRect(-6, topHeadY - 10, 12, 6);
@@ -772,7 +782,6 @@ function drawCannonBallSprite(m) {
     ctx.drawImage(src, -size * 0.46, -size * 0.54, size, size);
     ctx.imageSmoothingEnabled = true;
   } else {
-    // Pixel-art round iron cannonball with lit sparkling fuse
     ctx.fillStyle = "#334155";
     ctx.strokeStyle = "#0f172a";
     ctx.lineWidth = 2;
@@ -786,7 +795,6 @@ function drawCannonBallSprite(m) {
     ctx.arc(-r * 0.32, -r * 0.32, r * 0.32, 0, Math.PI * 2);
     ctx.fill();
 
-    // Fuse cap & stem
     ctx.fillStyle = "#1e293b";
     ctx.fillRect(r * 0.55, -r * 0.85, 5, 5);
     ctx.strokeStyle = "#b45309";
@@ -796,7 +804,6 @@ function drawCannonBallSprite(m) {
     ctx.lineTo(r * 1.35, -r * 1.15);
     ctx.stroke();
 
-    // Lit spark
     ctx.fillStyle = Math.floor(m.timer * 24) % 2 === 0 ? "#ef4444" : "#facc15";
     ctx.beginPath();
     ctx.arc(r * 1.4, -r * 1.2, 3, 0, Math.PI * 2);
@@ -805,11 +812,10 @@ function drawCannonBallSprite(m) {
 
   ctx.restore();
 
-  // Imminent detonation pulse flash in final 0.25s before 1.0s blast
-  if (m.timer > 0.75) {
-    const pulse = (m.timer - 0.75) / 0.25;
+  if (m.fromEnemy || m.timer > 0.75) {
+    const pulse = m.timer > 0.75 ? (m.timer - 0.75) / 0.25 : 0.35;
     ctx.save();
-    ctx.strokeStyle = `rgba(239, 68, 68, ${0.4 + pulse * 0.5})`;
+    ctx.strokeStyle = `rgba(239, 68, 68, ${0.45 + pulse * 0.5})`;
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.arc(m.x, m.y, r + 4 + pulse * 8, 0, Math.PI * 2);
@@ -950,15 +956,12 @@ function drawHUD() {
   if (!hero.hasMissileHat) {
     ctx.fillStyle = "#94a3b8";
     ctx.fillText(`HAT:--`, 452, 17);
-  } else if (hero.hatCooldown <= 0) {
+  } else if (hero.hatAmmo > 0) {
     ctx.fillStyle = "#facc15";
-    ctx.fillText(`HAT:RDY`, 452, 17);
+    ctx.fillText(`HAT:${hero.hatAmmo}/${CANNON_ROUNDS_PER_ROOM}`, 452, 17);
   } else {
     ctx.fillStyle = "#fb923c";
-    const cdLabel = hero.hatCooldown >= 10
-      ? `${Math.ceil(hero.hatCooldown)}s`
-      : hero.hatCooldown.toFixed(1);
-    ctx.fillText(`HAT:${cdLabel}`, 452, 17);
+    ctx.fillText(`HAT:0/${CANNON_ROUNDS_PER_ROOM}`, 452, 17);
   }
 
   const atkMult = getCompoundAttackMultiplier(game.transitions);
@@ -1112,7 +1115,7 @@ function drawSelectScreen() {
 
   ctx.fillStyle = "#cbd5e1";
   ctx.font = "12px monospace";
-  ctx.fillText(`ASDW MOVE/JUMP/LADDER  |  MOUSE AIM + L-CLICK ${GUN_BURST_COUNT}-BURST GUN  |  R-CLICK BONE  |  F CANNON BALL (60s)  |  [B] BOSS AFTER 10 ROOMS`, W / 2, 68);
+  ctx.fillText(`ASDW MOVE/JUMP/LADDER  |  MOUSE AIM + L-CLICK ${GUN_BURST_COUNT}-BURST GUN  |  R-CLICK BONE  |  F CANNON BALL (2/ROOM)  |  [B] BOSS AFTER 10 ROOMS`, W / 2, 68);
 
   const diffBtns = [
     { id: "NORMAL",   label: "NORMAL (1) [N]",   x: W / 2 - 345, y: 82, w: 216, h: 34 },
