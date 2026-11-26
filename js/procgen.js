@@ -10,8 +10,8 @@ function createEnemyInstance(kind, centerX, floorY, minX, maxX, transitions = 0,
   const scale = 1 + Math.min(2.5, transitions * 0.04);
 
   if (isBoss) {
-    const w = 72;
-    const h = 144;
+    const w = 84;
+    const h = 138;
     return {
       kind: "giant",
       isBoss: true,
@@ -20,7 +20,16 @@ function createEnemyInstance(kind, centerX, floorY, minX, maxX, transitions = 0,
       y: floorY - h,
       w,
       h,
-      vx: 82,
+      vx: 72,
+      chaseSpeed: 118,
+      chargeSpeed: 295,
+      chargeMaxDist: 340,
+      chargeDistTraveled: 0,
+      chargeCooldown: 1.5,
+      visionRange: 540,
+      alerted: true,
+      alertTimer: 0,
+      aggroTimer: 999,
       minX,
       maxX,
       facing: -1,
@@ -28,12 +37,13 @@ function createEnemyInstance(kind, centerX, floorY, minX, maxX, transitions = 0,
       maxHp: Math.round(680 * (1 + transitions * 0.03)),
       atk: Math.round(26 * atkMult),
       cleaveAtk: Math.round(42 * atkMult),
+      chargeAtk: Math.round(46 * atkMult),
       scoreValue: 5000,
-      aiState: "WALK",
+      aiState: "CHASE",
       aiTimer: 0,
       animTimer: 0,
       weaponAngle: -0.35,
-      weaponLength: 92,
+      weaponLength: 96,
       struckThisSwing: false,
       hurtTimer: 0,
       alive: true
@@ -41,8 +51,8 @@ function createEnemyInstance(kind, centerX, floorY, minX, maxX, transitions = 0,
   }
 
   if (kind === "giant") {
-    const w = 48;
-    const h = 96;
+    const w = 56;
+    const h = 92;
     return {
       kind: "giant",
       isBoss: false,
@@ -50,20 +60,30 @@ function createEnemyInstance(kind, centerX, floorY, minX, maxX, transitions = 0,
       y: floorY - h,
       w,
       h,
-      vx: 58 * Math.min(1.6, scale),
+      vx: 54 * Math.min(1.5, scale),
+      chaseSpeed: 96 * Math.min(1.5, scale),
+      chargeSpeed: 245 * Math.min(1.45, scale),
+      chargeMaxDist: 230,
+      chargeDistTraveled: 0,
+      chargeCooldown: 0,
+      visionRange: 330,
+      alerted: false,
+      alertTimer: 0,
+      aggroTimer: 0,
       minX,
       maxX,
       facing: -1,
-      hp: Math.round(130 * scale),
-      maxHp: Math.round(130 * scale),
+      hp: Math.round(145 * scale),
+      maxHp: Math.round(145 * scale),
       atk: Math.round(18 * atkMult),
       cleaveAtk: Math.round(28 * atkMult),
+      chargeAtk: Math.round(32 * atkMult),
       scoreValue: 800,
-      aiState: "WALK",
+      aiState: "PATROL",
       aiTimer: 0,
       animTimer: 0,
       weaponAngle: -0.35,
-      weaponLength: 62,
+      weaponLength: 68,
       struckThisSwing: false,
       hurtTimer: 0,
       alive: true
