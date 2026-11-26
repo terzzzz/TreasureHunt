@@ -790,10 +790,9 @@ function damageEnemy(enemy, dmg, hitX, hitY) {
   spawnParticles(hitX, hitY, "#dc2626", 6, 120);
   SFX.beep(190, 0.07, "square", 0.07, 110);
 
-  if (enemy.hp > 0) {
-    if (enemy.kind === "giant") {
+ if (enemy.kind === "giant") {
       alertGiantAxeman(enemy);
-    } else if (enemy.kind === "blade") {
+    } else if (enemy.kind === "blade" || enemy.kind === "knifer") {
       enemy.alerted = true;
       enemy.aggroTimer = 5.0;
       enemy.facing = (hero.x + hero.w * 0.5) < (enemy.x + enemy.w * 0.5) ? -1 : 1;
@@ -933,7 +932,7 @@ function stepEnemies(scr) {
         h: e.h - 12
       };
 
-      if (sameFloor && (rectsOverlap(hero, slashBox) || rectsOverlap(hero, e))) {
+if (sameFloor && (rectsOverlap(hero, slashBox) || rectsOverlap(hero, e))) {
         e.facing = dx < 0 ? -1 : 1;
         if (e.slashCooldown <= 0) {
           e.slashTimer = 0.24;
@@ -941,6 +940,87 @@ function stepEnemies(scr) {
           SFX.beep(260, 0.08, "sawtooth", 0.07, 140);
           damageHero(e.atk || Math.round(15 * atkMult), e.facing);
         }
+      }
+      continue;
+    }
+
+    if (e.kind === "knifer") {
+      if (e.hurtTimer > 0) e.hurtTimer = Math.max(0, e.hurtTimer - DT);
+      if (e.aggroTimer > 0) e.aggroTimer = Math.max(0, e.aggroTimer - DT);
+      if (e.dashCooldown > 0) e.dashCooldown = Math.max(0, e.dashCooldown - DT);
+
+      const eCenterX = e.x + e.w * 0.5;
+      const hCenterX = hero.x + hero.w * 0.5;
+      const dx = hCenterX - eCenterX;
+      const sameFloor = Math.abs((hero.y + hero.h) - (e.y + e.h)) < 46;
+
+      if (sameFloor && Math.abs(dx) < (e.visionRange || 340)) {
+        e.alerted = true;
+        e.aggroTimer = 3.5;
+      } else if (e.aggroTimer <= 0 && e.aiState !== "DASH_WINDUP" && e.aiState !== "DASH_STAB") {
+        e.alerted = false;
+        e.aiState = "PATROL";
+      }
+
+      if (e.aiState === "DASH_WINDUP") {
+        e.aiTimer -= DT;
+        e.facing = e.dashDir || (dx < 0 ? -1 : 1);
+        if (e.aiTimer <= 0) {
+          e.aiState = "DASH_STAB";
+          e.aiTimer = e.dashDuration || 0.22;
+          e.struckThisDash = false;
+          SFX.beep(540, 0.08, "sawtooth", 0.06, 260);
+        }
+      } else if (e.aiState === "DASH_STAB") {
+        e.aiTimer -= DT;
+        e.animTimer += DT * 2.4;
+        const dir = e.dashDir || e.facing || 1;
+        const dashSpd = e.dashSpeed || 265;
+        e.x = Math.max(e.minX, Math.min(e.maxX - e.w, e.x + dir * dashSpd * DT));
+
+        const knifeBox = {
+          x: dir === 1 ? e.x + e.w - 4 : e.x - 18,
+          y: e.y + e.h * 0.28,
+          w: 22,
+          h: e.h * 0.48
+        };
+
+        if (sameFloor && !e.struckThisDash && (rectsOverlap(hero, knifeBox) || rectsOverlap(hero, e))) {
+          e.struckThisDash = true;
+          SFX.beep(240, 0.09, "sawtooth", 0.08, 120);
+          damageHero(e.atk || Math.round(13 * atkMult), dir);
+        }
+
+        if (e.aiTimer <= 0) {
+          e.aiState = "STALK";
+          e.dashCooldown = e.dashCooldownTime || 1.35;
+        }
+      } else if (e.alerted && sameFloor) {
+        e.aiState = "STALK";
+        e.animTimer += DT * 0.85;
+        const dir = dx < 0 ? -1 : 1;
+        e.facing = dir;
+
+        if (e.dashCooldown <= 0 && Math.abs(dx) <= 118) {
+          e.aiState = "DASH_WINDUP";
+          e.aiTimer = e.dashWindup || 0.26;
+          e.dashDir = dir;
+        } else if (Math.abs(dx) > 42) {
+          const stalkSpeed = e.chaseSpeed || 56;
+          e.x = Math.max(e.minX, Math.min(e.maxX - e.w, e.x + dir * stalkSpeed * DT));
+        }
+      } else {
+        e.aiState = "PATROL";
+        e.animTimer += DT * 0.65;
+        e.x += e.vx * DT;
+        if (e.x <= e.minX) {
+          e.x = e.minX;
+          e.vx = Math.abs(e.vx);
+        } else if (e.x + e.w >= e.maxX) {
+          e.x = e.maxX - e.w;
+          e.vx = -Math.abs(e.vx);
+        }
+        e.facing = e.vx < 0 ? -1 : 1;
       }
       continue;
     }
