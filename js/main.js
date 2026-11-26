@@ -86,6 +86,82 @@ function advanceToNextScreen() {
   loadScreenByIndex(nextIdx);
 }
 
+// js/main.js (debugDrag undo & erase helpers) //
+// Ensure debugDrag includes a history array:
+// const debugDrag = { active: false, startX: 0, startY: 0, curX: 0, curY: 0, draftBox: null, lastJson: "", history: [] };
+
+function commitDebugBox(kind) {
+  const scr = game.activeScreen;
+  const db = debugDrag.draftBox;
+  if (!scr || !db) return;
+
+  if (!Array.isArray(debugDrag.history)) debugDrag.history = [];
+
+  if (kind === "solid") {
+    const item = { x: db.x, y: db.y, w: db.w, h: db.h, hatched: true };
+    scr.solids.push(item);
+    debugDrag.history.push({ list: scr.solids, item, label: "Solid" });
+    debugDrag.lastJson = `ADDED SOLID: ${JSON.stringify(item)}`;
+  } else if (kind === "ladder") {
+    const item = { x: db.x, y: db.y, w: db.w, h: db.h };
+    scr.ladders.push(item);
+    debugDrag.history.push({ list: scr.ladders, item, label: "Ladder" });
+    debugDrag.lastJson = `ADDED LADDER: ${JSON.stringify(item)}`;
+  } else if (kind === "oneWay") {
+    const item = { x: db.x, y: db.y, w: db.w };
+    scr.oneWay.push(item);
+    debugDrag.history.push({ list: scr.oneWay, item, label: "OneWay" });
+    debugDrag.lastJson = `ADDED ONEWAY: ${JSON.stringify(item)}`;
+  }
+  debugDrag.draftBox = null;
+}
+
+function undoLastDebugBox() {
+  if (!Array.isArray(debugDrag.history) || debugDrag.history.length === 0) {
+    debugDrag.draftBox = null;
+    debugDrag.lastJson = "NOTHING TO UNDO";
+    return;
+  }
+  const last = debugDrag.history.pop();
+  const idx = last.list.indexOf(last.item);
+  if (idx !== -1) last.list.splice(idx, 1);
+  debugDrag.lastJson = `UNDID ${last.label.toUpperCase()} (${debugDrag.history.length} left)`;
+}
+
+function eraseDebugBoxAtCursor() {
+  // 1. If an uncommitted dashed draft box is active, discard it first
+  if (debugDrag.draftBox) {
+    debugDrag.draftBox = null;
+    debugDrag.lastJson = "CLEARED DRAFT BOX";
+    return;
+  }
+
+  // 2. Otherwise delete the topmost Solid, Ladder, or OneWay under the mouse cursor
+  const scr = game.activeScreen;
+  if (!scr) return;
+  const wx = game.aimWorldX;
+  const wy = game.aimWorldY;
+
+  const collections = [
+    { list: scr.oneWay, label: "OneWay", defaultH: 10 },
+    { list: scr.ladders, label: "Ladder", defaultH: 32 },
+    { list: scr.solids, label: "Solid", defaultH: 16 }
+  ];
+
+  for (const col of collections) {
+    for (let i = col.list.length - 1; i >= 0; i--) {
+      const box = col.list[i];
+      const bh = box.h ?? col.defaultH;
+      if (wx >= box.x && wx <= box.x + box.w && wy >= box.y && wy <= box.y + bh) {
+        col.list.splice(i, 1);
+        debugDrag.lastJson = `ERASED ${col.label.toUpperCase()}: ${JSON.stringify(box)}`;
+        return;
+      }
+    }
+  }
+  debugDrag.lastJson = "NO BOX UNDER CURSOR";
+}
+
 function startStageWithSelectedTraits() {
   const chosen = setup.selected.slice(0, requiredTraitCount());
   if (chosen.length !== requiredTraitCount()) return;
