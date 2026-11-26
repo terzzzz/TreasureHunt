@@ -788,9 +788,10 @@ function damageEnemy(enemy, dmg, hitX, hitY) {
   enemy.hp -= dmg;
   enemy.hurtTimer = 0.14;
   spawnParticles(hitX, hitY, "#dc2626", 6, 120);
-  SFX.beep(190, 0.07, "square", 0.07, 110);
+SFX.beep(190, 0.07, "square", 0.07, 110);
 
- if (enemy.kind === "giant") {
+  if (enemy.hp > 0) {
+    if (enemy.kind === "giant") {
       alertGiantAxeman(enemy);
     } else if (enemy.kind === "blade" || enemy.kind === "knifer") {
       enemy.alerted = true;
