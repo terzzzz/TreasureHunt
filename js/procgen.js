@@ -90,7 +90,6 @@ function createEnemyInstance(kind, centerX, floorY, minX, maxX, transitions = 0,
     };
   }
 
-  // Blademan: same size as player (34x56), faster sprint speed (235 vs player 210), 15 slash dmg
   const w = 34;
   const h = 56;
   return {
@@ -164,26 +163,42 @@ function generateProceduralScreen(runSeed, stageIndex) {
 
   const grid = Array.from({ length: ROWS }, () =>
     Array.from({ length: COLS }, () => ({
-      onSpine: false,
+      visited: false,
       openLeft: false,
       openRight: false,
       openUp: false,
       openDown: false,
-      hatch: null // { x, w } opening in this cell's floor
+      hatch: null
     }))
   );
+
+  function linkCells(r1, c1, r2, c2) {
+    if (c2 === c1 + 1) {
+      grid[r1][c1].openRight = true;
+      grid[r2][c2].openLeft = true;
+    } else if (c2 === c1 - 1) {
+      grid[r1][c1].openLeft = true;
+      grid[r2][c2].openRight = true;
+    } else if (r2 === r1 + 1) {
+      grid[r1][c1].openDown = true;
+      grid[r2][c2].openUp = true;
+    } else if (r2 === r1 - 1) {
+      grid[r1][c1].openUp = true;
+      grid[r2][c2].openDown = true;
+    }
+  }
 
   // 1. Carve guaranteed spine across 3x3 grid from col 0 to col 2
   let curR = randInt(0, ROWS - 1);
   let curC = 0;
   const startRow = curR;
-  grid[curR][curC].onSpine = true;
+  grid[curR][curC].visited = true;
   grid[curR][curC].openLeft = true;
 
   while (curC < COLS - 1) {
     const moves = [{ dr: 0, dc: 1, weight: isSpacious ? 3 : 2 }];
-    if (curR > 0 && !grid[curR - 1][curC].onSpine) moves.push({ dr: -1, dc: 0, weight: isDense ? 3 : 2 });
-    if (curR < ROWS - 1 && !grid[curR + 1][curC].onSpine) moves.push({ dr: 1, dc: 0, weight: 2 });
+    if (curR > 0 && !grid[curR - 1][curC].visited) moves.push({ dr: -1, dc: 0, weight: isDense ? 3 : 2 });
+    if (curR < ROWS - 1 && !grid[curR + 1][curC].visited) moves.push({ dr: 1, dc: 0, weight: 2 });
 
     const totalW = moves.reduce((s, m) => s + m.weight, 0);
     let roll = rng() * totalW;
@@ -195,33 +210,52 @@ function generateProceduralScreen(runSeed, stageIndex) {
 
     const nextR = curR + chosen.dr;
     const nextC = curC + chosen.dc;
-
-    if (chosen.dc === 1) {
-      grid[curR][curC].openRight = true;
-      grid[nextR][nextC].openLeft = true;
-    } else if (chosen.dr === -1) {
-      grid[curR][curC].openUp = true;
-      grid[nextR][nextC].openDown = true;
-    } else if (chosen.dr === 1) {
-      grid[curR][curC].openDown = true;
-      grid[nextR][nextC].openUp = true;
-    }
-
+    linkCells(curR, curC, nextR, nextC);
     curR = nextR;
     curC = nextC;
-    grid[curR][curC].onSpine = true;
+    grid[curR][curC].visited = true;
   }
 
   const exitRow = curR;
   grid[exitRow][COLS - 1].openRight = true;
 
-  // 2. Plan vertical ladder shafts first so upper floors always get a clean opening
+  // 1b. Connect EVERY remaining unvisited cell in the 3x3 grid so NO sealed pockets can ever form
+  let unvisitedCount = 0;
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      if (!grid[r][c].visited) unvisitedCount++;
+    }
+  }
+
+  while (unvisitedCount > 0) {
+    const frontier = [];
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        if (!grid[r][c].visited) continue;
+        const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+        for (const [dr, dc] of dirs) {
+          const nr = r + dr;
+          const nc = c + dc;
+          if (nr >= 0 && nr < ROWS && nc >= 0 && nc < COLS && !grid[nr][nc].visited) {
+            frontier.push({ r, c, nr, nc });
+          }
+        }
+      }
+    }
+    if (frontier.length === 0) break;
+    const pick = frontier[randInt(0, frontier.length - 1)];
+    linkCells(pick.r, pick.c, pick.nr, pick.nc);
+    grid[pick.nr][pick.nc].visited = true;
+    unvisitedCount--;
+  }
+
+  // 2. Build vertical ladder shafts for every vertical link (plus occasional bonus ladders)
   for (let r = 1; r < ROWS; r++) {
     for (let c = 0; c < COLS; c++) {
       const cell = grid[r][c];
       const upperCell = grid[r - 1][c];
       const x0 = Math.round(c * cellW);
-      const needsLadder = cell.openUp || upperCell.openDown || (!isSpacious && rng() < (isDense ? 0.35 : 0.16));
+      const needsLadder = cell.openUp || upperCell.openDown || (!isSpacious && rng() < (isDense ? 0.30 : 0.14));
 
       if (needsLadder) {
         const hatchW = 84;
@@ -240,7 +274,7 @@ function generateProceduralScreen(runSeed, stageIndex) {
     }
   }
 
-  // 3. Build cell floors (splitting around hatches), walls, and mid-cell ledges
+  // 3. Build cell floors (splitting around hatches), jumpable cover walls, and mid-cell ledges
   for (let r = 0; r < ROWS; r++) {
     for (let c = 0; c < COLS; c++) {
       const cell = grid[r][c];
@@ -260,29 +294,26 @@ function generateProceduralScreen(runSeed, stageIndex) {
           if (hx + hw < x1) {
             solids.push({ x: hx + hw, y: cellFloorY, w: x1 - (hx + hw), h: 16, hatched: true });
           }
-        } else if (cell.onSpine || !isSpacious || rng() < 0.45) {
+        } else if (!isSpacious || rng() < 0.55) {
           solids.push({ x: x0, y: cellFloorY, w: x1 - x0, h: 16, hatched: true });
         } else {
-          const platW = randInt(100, 175);
+          const platW = randInt(110, 185);
           const platX = Math.round(x0 + randInt(24, Math.max(26, (x1 - x0) - platW - 24)));
           oneWay.push({ x: platX, y: cellFloorY, w: platW, h: 10 });
         }
       }
 
-      // Vertical divider wall only when column is NOT connected horizontally on the spine
+      // Jumpable low cover walls (56px high) instead of unpassable floor-to-ceiling walls
       if (c < COLS - 1 && !cell.openRight) {
-        const shouldWall = isDense ? (rng() < 0.65) : (!isSpacious && rng() < 0.35);
+        const shouldWall = isDense ? (rng() < 0.55) : (!isSpacious && rng() < 0.30);
         if (shouldWall) {
           const wallX = Math.round(x1 - 11);
-          const wallTop = Math.round(y0 + 16);
-          const wallH = cellFloorY - wallTop;
-          if (wallH > 36) {
-            solids.push({ x: wallX, y: wallTop, w: 22, h: wallH, hatched: true });
-          }
+          const coverH = 56;
+          solids.push({ x: wallX, y: cellFloorY - coverH, w: 22, h: coverH, hatched: true });
         }
       }
 
-      if (rng() < (isDense ? 0.45 : 0.22)) {
+      if (rng() < (isDense ? 0.42 : 0.22)) {
         const ledgeW = randInt(80, 130);
         const ledgeX = Math.round(x0 + randInt(28, Math.max(30, (x1 - x0) - ledgeW - 28)));
         const ledgeY = Math.round(y0 + cellH * 0.48);
@@ -307,7 +338,7 @@ function generateProceduralScreen(runSeed, stageIndex) {
     dir: "right"
   };
 
-  // 5. Scaled enemies & every-10-rounds chicken spawn (hat is exclusive to start.jpeg's Alien)
+  // 5. Scaled enemies & every-10-rounds chicken spawn
   const enemyCount = Math.min(9, 3 + Math.floor(stageIndex * 0.55));
   for (let i = 0; i < enemyCount; i++) {
     const ec = randInt(1, COLS - 1);
@@ -327,7 +358,6 @@ function generateProceduralScreen(runSeed, stageIndex) {
     enemies.push(enemy);
   }
 
-  // Spawn a Chicken ONLY every 10 rounds (stageIndex 10, 20, 30...) alongside an enemy
   if (stageIndex > 0 && stageIndex % 10 === 0 && enemies.length > 0) {
     const hostEnemy = enemies[enemies.length - 1];
     pickups.push({
@@ -340,7 +370,6 @@ function generateProceduralScreen(runSeed, stageIndex) {
     });
   }
 
-  // Score crowns only
   const numCrowns = randInt(1, 2);
   for (let p = 0; p < numCrowns; p++) {
     const pc = randInt(1, COLS - 1);
