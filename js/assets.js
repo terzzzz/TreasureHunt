@@ -2,6 +2,7 @@
 "use strict";
 
 const BGM_MASTER_VOLUME = 0.40; // 40% of actual volume for all game music
+const SFX_MASTER_GAIN = 2.0;    // +100% (2x) volume for all sound effects
 
 function loadKeyedSprite(src, keyBg = true, eraseOriginalGun = false) {
   const entry = { img: new Image(), canvas: null, loaded: false };
@@ -360,15 +361,36 @@ function ensureStartScreenAlien(scr) {
 
 if (typeof STAGE_001_DEFAULT !== "undefined") {
   STAGE_001_DEFAULT.stageName = "RUIN CAVE";
+  STAGE_001_DEFAULT.bgm = "music/music001.mp3";
   if (Array.isArray(STAGE_001_DEFAULT.screens)) {
     ensureStartScreenAlien(STAGE_001_DEFAULT.screens[0]);
   }
 }
 if (typeof stageManager !== "undefined" && stageManager.data) {
   stageManager.data.stageName = "RUIN CAVE";
+  if (!stageManager.data.bgm) stageManager.data.bgm = "music/music001.mp3";
   if (Array.isArray(stageManager.data.screens)) {
     ensureStartScreenAlien(stageManager.data.screens[0]);
   }
+}
+
+function createStage001BgmAudio(src = "./Stages/001/music/music001.mp3") {
+  const audio = new Audio(src);
+  audio.loop = true;
+  audio.volume = BGM_MASTER_VOLUME;
+  return audio;
+}
+
+if (typeof stageManager !== "undefined" && !stageManager.bgmAudio) {
+  stageManager.bgmAudio = createStage001BgmAudio("./Stages/001/music/music001.mp3");
+}
+
+function resolveStageBgmPath(stageFolder, bgmField) {
+  if (!bgmField) return `${stageFolder}/music/music001.mp3`;
+  const clean = String(bgmField).replace(/^\.?\//, "");
+  if (clean.startsWith("Stages/") || clean.startsWith("BGM/")) return `./${clean}`;
+  if (clean.includes("/")) return `${stageFolder}/${clean}`;
+  return `${stageFolder}/music/${clean}`;
 }
 
 async function initStage001() {
@@ -381,7 +403,8 @@ async function initStage001() {
         stageManager.data = {
           ...STAGE_001_DEFAULT,
           ...parsed,
-          stageName: parsed.stageName || parsed.title || "RUIN CAVE"
+          stageName: parsed.stageName || parsed.title || "RUIN CAVE",
+          bgm: parsed.bgm || "music/music001.mp3"
         };
       }
     }
@@ -389,6 +412,7 @@ async function initStage001() {
 
   if (stageManager.data) {
     if (!stageManager.data.stageName) stageManager.data.stageName = "RUIN CAVE";
+    if (!stageManager.data.bgm) stageManager.data.bgm = "music/music001.mp3";
     if (Array.isArray(stageManager.data.screens)) {
       ensureStartScreenAlien(stageManager.data.screens[0]);
     }
@@ -406,13 +430,14 @@ async function initStage001() {
     }
   });
 
-  if (stageManager.data.bgm) {
-    const audio = new Audio(`${stageManager.stageFolder}/${stageManager.data.bgm}`);
-    audio.loop = true;
-    audio.volume = BGM_MASTER_VOLUME;
-    stageManager.bgmAudio = audio;
-    SFX.syncBgm();
+  const resolvedBgmSrc = resolveStageBgmPath(stageManager.stageFolder, stageManager.data?.bgm);
+  if (!stageManager.bgmAudio) {
+    stageManager.bgmAudio = createStage001BgmAudio(resolvedBgmSrc);
+  } else if (!stageManager.bgmAudio.src.endsWith(resolvedBgmSrc.replace(/^\.\//, ""))) {
+    stageManager.bgmAudio.pause();
+    stageManager.bgmAudio = createStage001BgmAudio(resolvedBgmSrc);
   }
+  SFX.syncBgm();
 }
 
 function createTitleBgmAudio() {
@@ -488,7 +513,7 @@ const SFX = {
     osc.type = type;
     osc.frequency.setValueAtTime(freq * (hero.traits.deaf ? 0.68 : 1), t);
     if (slideTo) osc.frequency.exponentialRampToValueAtTime(slideTo, t + dur);
-    gain.gain.setValueAtTime(gainVal * deafMult, t);
+    gain.gain.setValueAtTime(Math.min(1.0, gainVal * deafMult * SFX_MASTER_GAIN), t);
     gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
     osc.connect(gain);
     gain.connect(this.ctx.destination);
@@ -512,7 +537,7 @@ const SFX = {
       const gain = this.ctx.createGain();
       osc.type = "triangle";
       osc.frequency.setValueAtTime(n.f * (hero.traits.deaf ? 0.85 : 1), now + n.t);
-      gain.gain.setValueAtTime(0.11 * deafMult, now + n.t);
+      gain.gain.setValueAtTime(Math.min(1.0, 0.11 * deafMult * SFX_MASTER_GAIN), now + n.t);
       gain.gain.exponentialRampToValueAtTime(0.001, now + n.t + n.d);
       osc.connect(gain);
       gain.connect(this.ctx.destination);
