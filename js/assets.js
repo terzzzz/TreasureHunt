@@ -475,7 +475,7 @@ const EXTRA_SPRITES = {
   giant:        loadGroundEnemySprite("./char/giant.jpeg", "./char/giant.png", 0.785),
   giantAxe:     loadOptionalImage("./char/giant_axe.png"),
   blade:        loadGroundEnemySprite("./char/blade.jpeg", "./char/blade_enemy.png", 0.785),
-  knifer:       loadGroundEnemySprite("./char/knifer.jpeg", "./Stages/001/knifer.jpeg", 0.88),
+  knifer:       loadGroundEnemySprite("./char/knifer.jpeg", "./char/knifer.jpg", 0.905),
   alien:        loadGroundEnemySprite("./char/alien.png", "./char/alien.jpeg", 0.90),
   hat:          loadGroundEnemySprite("./char/hat.png", "./char/hat.jpeg", 1.0),
   cannonball:   loadSpriteFloodFill("./char/cannonball.png", "./char/cannonball.jpeg"),
