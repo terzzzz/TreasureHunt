@@ -44,6 +44,248 @@ function drawRedFlashSprite(src, dx, dy, dw, dh, alpha = 0.72) {
   ctx.drawImage(_hitFlashBuffer.canvas, dx, dy, dw, dh);
 }
 
+// Automatically strips white background halo & the baked-in stone floor pedestal beneath the Knifer's boots
+function getCleanKniferCanvas() {
+  if (typeof EXTRA_SPRITES === "undefined" || !EXTRA_SPRITES.knifer || !EXTRA_SPRITES.knifer.loaded) {
+    return null;
+  }
+  const entry = EXTRA_SPRITES.knifer;
+  const rawSrc = entry.canvas || entry.img;
+  if (!rawSrc) return null;
+
+  const sw = rawSrc.naturalWidth || rawSrc.width;
+  const sh = rawSrc.naturalHeight || rawSrc.height;
+  if (!sw || !sh) return null;
+
+  if (entry._cleanCanvas && entry._cleanSrc === rawSrc && entry._cleanW === sw && entry._cleanH === sh) {
+    return entry._cleanCanvas;
+  }
+
+  const work = document.createElement("canvas");
+  work.width = sw;
+  work.height = sh;
+  const wctx = work.getContext("2d");
+  wctx.drawImage(rawSrc, 0, 0, sw, sh);
+
+  let imgData;
+  try {
+    imgData = wctx.getImageData(0, 0, sw, sh);
+  } catch (_) {
+    entry._cleanCanvas = rawSrc;
+    entry._cleanSrc = rawSrc;
+    entry._cleanW = sw;
+    entry._cleanH = sh;
+    return rawSrc;
+  }
+
+  const data = imgData.data;
+  const isNearWhiteBg = (idx) => {
+    const a = data[idx + 3];
+    if (a < 20) return true;
+    const r = data[idx];
+    const g = data[idx + 1];
+    const b = data[idx + 2];
+    const maxC = Math.max(r, g, b);
+    const minC = Math.min(r, g, b);
+    return maxC >= 210 && (maxC - minC) <= 26;
+  };
+
+  // 1. Flood-fill from image edges to clear any remaining light background pixels
+  const visited = new Uint8Array(sw * sh);
+  const queue = new Int32Array(sw * sh);
+  let head = 0;
+  let tail = 0;
+
+  const pushIfBg = (x, y) => {
+    if (x < 0 || x >= sw || y < 0 || y >= sh) return;
+    const p = y * sw + x;
+    if (visited[p]) return;
+    visited[p] = 1;
+    if (isNearWhiteBg(p * 4)) {
+      queue[tail++] = p;
+    }
+  };
+
+  for (let x = 0; x < sw; x++) {
+    pushIfBg(x, 0);
+    pushIfBg(x, sh - 1);
+  }
+  for (let y = 0; y < sh; y++) {
+    pushIfBg(0, y);
+    pushIfBg(sw - 1, y);
+  }
+
+  while (head < tail) {
+    const p = queue[head++];
+    data[p * 4 + 3] = 0;
+    const x = p % sw;
+    const y = (p - x) / sw;
+    pushIfBg(x - 1, y);
+    pushIfBg(x + 1, y);
+    pushIfBg(x, y - 1);
+    pushIfBg(x, y + 1);
+  }
+
+  // 2. Defringe 1px white outline halo around the silhouette
+  const alphaCopy = new Uint8ClampedArray(sw * sh);
+  for (let p = 0; p < sw * sh; p++) alphaCopy[p] = data[p * 4 + 3];
+
+  for (let y = 1; y < sh - 1; y++) {
+    for (let x = 1; x < sw - 1; x++) {
+      const p = y * sw + x;
+      if (alphaCopy[p] === 0) continue;
+      const touchesTransparent =
+        alphaCopy[p - 1] === 0 ||
+        alphaCopy[p + 1] === 0 ||
+        alphaCopy[p - sw] === 0 ||
+        alphaCopy[p + sw] === 0;
+      if (touchesTransparent) {
+        const idx = p * 4;
+        const r = data[idx];
+        const g = data[idx + 1];
+        const b = data[idx + 2];
+        const maxC = Math.max(r, g, b);
+        const minC = Math.min(r, g, b);
+        if (maxC >= 195 && (maxC - minC) <= 30) {
+          data[idx + 3] = 0;
+        }
+      }
+    }
+  }
+
+  // 3. Find initial non-transparent bounds
+  let topY = sh;
+  let botY = -1;
+  let leftX = sw;
+  let rightX = -1;
+  for (let y = 0; y < sh; y++) {
+    for (let x = 0; x < sw; x++) {
+      if (data[(y * sw + x) * 4 + 3] > 24) {
+        if (y < topY) topY = y;
+        if (y > botY) botY = y;
+        if (x < leftX) leftX = x;
+        if (x > rightX) rightX = x;
+      }
+    }
+  }
+
+  // 4. Detect and remove the horizontal stone floor slab at the bottom of the sprite
+  if (botY > topY + 12) {
+    const contentH = botY - topY + 1;
+    const scanStart = Math.max(topY + Math.floor(contentH * 0.70), botY - Math.ceil(contentH * 0.28));
+
+    const rowStats = [];
+    for (let y = scanStart; y <= botY; y++) {
+      let rMin = sw;
+      let rMax = -1;
+      let count = 0;
+      let segments = 0;
+      let inSeg = false;
+      for (let x = leftX; x <= rightX; x++) {
+        const opaque = data[(y * sw + x) * 4 + 3] > 24;
+        if (opaque) {
+          if (x < rMin) rMin = x;
+          if (x > rMax) rMax = x;
+          count++;
+          if (!inSeg) {
+            segments++;
+            inSeg = true;
+          }
+        } else {
+          inSeg = false;
+        }
+      }
+      const span = rMax >= rMin ? (rMax - rMin + 1) : 0;
+      const fill = span > 0 ? count / span : 0;
+      rowStats.push({ y, span, count, segments, fill });
+    }
+
+    // Walk upward from the very bottom row while rows form a single solid wide bar (the floor pedestal)
+    let slabTopY = null;
+    let maxSlabSpan = 0;
+    for (let i = rowStats.length - 1; i >= 0; i--) {
+      const st = rowStats[i];
+      if (st.span === 0) continue;
+      const isSolidBar = st.segments === 1 && st.fill >= 0.72;
+      if (slabTopY === null) {
+        if (isSolidBar && st.span >= (rightX - leftX + 1) * 0.58) {
+          slabTopY = st.y;
+          maxSlabSpan = st.span;
+        } else {
+          break;
+        }
+      } else {
+        if (isSolidBar && st.span >= maxSlabSpan * 0.80) {
+          slabTopY = st.y;
+          if (st.span > maxSlabSpan) maxSlabSpan = st.span;
+        } else {
+          break;
+        }
+      }
+    }
+
+    // Verify rows immediately above slabTopY are narrower or split into two separate boots
+    if (slabTopY !== null && slabTopY > scanStart) {
+      const aboveIdx = slabTopY - 1 - scanStart;
+      const above = rowStats[aboveIdx];
+      const slabThickness = botY - slabTopY + 1;
+      if (
+        slabThickness >= 2 &&
+        slabThickness <= contentH * 0.26 &&
+        above &&
+        (above.segments >= 2 || above.span <= maxSlabSpan * 0.78)
+      ) {
+        for (let y = slabTopY; y <= botY; y++) {
+          for (let x = 0; x < sw; x++) {
+            data[(y * sw + x) * 4 + 3] = 0;
+          }
+        }
+      }
+    }
+  }
+
+  wctx.putImageData(imgData, 0, 0);
+
+  // 5. Recompute final tight bounding box so boots rest cleanly at y = finalH
+  let fMinX = sw;
+  let fMinY = sh;
+  let fMaxX = -1;
+  let fMaxY = -1;
+  for (let y = 0; y < sh; y++) {
+    for (let x = 0; x < sw; x++) {
+      if (data[(y * sw + x) * 4 + 3] > 24) {
+        if (x < fMinX) fMinX = x;
+        if (x > fMaxX) fMaxX = x;
+        if (y < fMinY) fMinY = y;
+        if (y > fMaxY) fMaxY = y;
+      }
+    }
+  }
+
+  if (fMaxX < fMinX || fMaxY < fMinY) {
+    entry._cleanCanvas = rawSrc;
+    entry._cleanSrc = rawSrc;
+    entry._cleanW = sw;
+    entry._cleanH = sh;
+    return rawSrc;
+  }
+
+  const trimW = fMaxX - fMinX + 1;
+  const trimH = fMaxY - fMinY + 1;
+  const trimmed = document.createElement("canvas");
+  trimmed.width = trimW;
+  trimmed.height = trimH;
+  const tctx = trimmed.getContext("2d");
+  tctx.imageSmoothingEnabled = false;
+  tctx.drawImage(work, fMinX, fMinY, trimW, trimH, 0, 0, trimW, trimH);
+
+  entry._cleanCanvas = trimmed;
+  entry._cleanSrc = rawSrc;
+  entry._cleanW = sw;
+  entry._cleanH = sh;
+  return trimmed;
+}
+
 function getHeroGunMuzzlePos() {
   const runBobY = hero.animState === "RUN" ? Math.abs(Math.sin(hero.animTimer)) * -3.5 : 0;
   const climbBobX = hero.animState === "CLIMB" ? Math.sin(hero.animTimer) * 2.5 : 0;
@@ -618,19 +860,27 @@ function drawBladeEnemy(e) {
 function drawKniferEnemy(e) {
   const isDashing = e.aiState === "DASH_STAB";
   const isWindup = e.aiState === "DASH_WINDUP";
-  const hasSprite = typeof EXTRA_SPRITES !== "undefined" && EXTRA_SPRITES.knifer && EXTRA_SPRITES.knifer.loaded;
+  const cleanSrc = getCleanKniferCanvas();
+  const hasSprite = Boolean(cleanSrc);
+
+  // Preserve exact natural aspect ratio of the floor-removed sprite so he never looks stretched/squished
+  let drawW = e.w * 1.15;
+  let drawH = Math.max(e.h, 54);
+  if (hasSprite) {
+    const sw = cleanSrc.naturalWidth || cleanSrc.width || 1;
+    const sh = cleanSrc.naturalHeight || cleanSrc.height || 1;
+    drawH = Math.max(e.h, 54);
+    drawW = drawH * (sw / sh);
+  }
 
   if (isDashing && hasSprite) {
-    const src = EXTRA_SPRITES.knifer.canvas || EXTRA_SPRITES.knifer.img;
-    const drawW = e.w * 1.40;
-    const drawH = e.h;
     for (let t = 1; t <= 2; t++) {
       ctx.save();
       ctx.globalAlpha = 0.28 / t;
       ctx.translate(e.x + e.w / 2 - (e.facing || 1) * t * 11, e.y + e.h);
       ctx.scale(e.facing || 1, 1);
       ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(src, -drawW * 0.38, -drawH, drawW, drawH);
+      ctx.drawImage(cleanSrc, -drawW * 0.48, -drawH, drawW, drawH);
       ctx.restore();
     }
   }
@@ -638,21 +888,18 @@ function drawKniferEnemy(e) {
   ctx.save();
   const step = Math.floor(e.animTimer * (isDashing ? 20 : 11));
   const bobY = isDashing || isWindup ? 0 : (step % 2 === 0 ? -2 : 0);
-  const crouchScaleY = isWindup ? 0.90 : 1.0;
-  const leanTilt = isDashing ? 0.18 : (isWindup ? -0.14 : 0);
+  const crouchScaleY = isWindup ? 0.92 : 1.0;
+  const leanTilt = isDashing ? 0.16 : (isWindup ? -0.12 : 0);
 
   ctx.translate(e.x + e.w / 2, e.y + e.h + bobY);
   ctx.scale(e.facing || 1, crouchScaleY);
   ctx.rotate(leanTilt);
 
   if (hasSprite) {
-    const src = EXTRA_SPRITES.knifer.canvas || EXTRA_SPRITES.knifer.img;
-    const drawW = e.w * 1.40;
-    const drawH = e.h;
     ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(src, -drawW * 0.38, -drawH, drawW, drawH);
+    ctx.drawImage(cleanSrc, -drawW * 0.48, -drawH, drawW, drawH);
     if (e.hurtTimer > 0) {
-      drawRedFlashSprite(src, -drawW * 0.38, -drawH, drawW, drawH, 0.72);
+      drawRedFlashSprite(cleanSrc, -drawW * 0.48, -drawH, drawW, drawH, 0.72);
     }
     ctx.imageSmoothingEnabled = true;
   } else {
@@ -680,17 +927,18 @@ function drawKniferEnemy(e) {
     ctx.strokeStyle = isDashing ? "rgba(250, 204, 21, 0.95)" : "rgba(248, 113, 113, 0.85)";
     ctx.lineWidth = 2.5;
     ctx.beginPath();
-    ctx.moveTo(8, -e.h * 0.46);
-    ctx.lineTo(isDashing ? 28 : 18, -e.h * 0.46);
+    ctx.moveTo(8, -drawH * 0.46);
+    ctx.lineTo(isDashing ? 28 : 18, -drawH * 0.46);
     ctx.stroke();
   }
 
   ctx.restore();
 
+  const barY = e.y + e.h - drawH - 7;
   ctx.fillStyle = "#1e293b";
-  ctx.fillRect(e.x, e.y - 9, e.w, 4);
+  ctx.fillRect(e.x, barY, e.w, 4);
   ctx.fillStyle = isDashing ? "#facc15" : (e.alerted ? "#f97316" : "#64748b");
-  ctx.fillRect(e.x, e.y - 9, e.w * Math.max(0, e.hp / e.maxHp), 4);
+  ctx.fillRect(e.x, barY, e.w * Math.max(0, e.hp / e.maxHp), 4);
 }
 
 function drawAxeGiant(g) {
