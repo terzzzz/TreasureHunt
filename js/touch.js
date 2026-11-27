@@ -17,40 +17,46 @@ const touchUI = {
   prevJumpHeld: false,
   prevBoneHeld: false,
   prevHatHeld: false,
+  dpadCenter: { x: 108, y: H - 112 },
   buttons: []
 };
 
 function clientToCanvasCoords(clientX, clientY) {
   const rect = canvas.getBoundingClientRect();
+  const rw = rect.width || 1;
+  const rh = rect.height || 1;
   return {
-    x: ((clientX - rect.left) / rect.width) * W,
-    y: ((clientY - rect.top) / rect.height) * H
+    x: ((clientX - rect.left) / rw) * W,
+    y: ((clientY - rect.top) / rh) * H
   };
 }
 
 function buildTouchLayout() {
-  const padR = 30;
-  const dpadCx = 96;
-  const dpadCy = H - 96;
+  const padR = 34;
+  const step = 56;
+  const dpadCx = 108;
+  const dpadCy = H - 112; // Bottom of DOWN button = (621 - 112) + 56 + 34 = 599 (22px clear margin)
+
+  touchUI.dpadCenter = { x: dpadCx, y: dpadCy };
 
   touchUI.buttons = [
     // Left-thumb D-Pad
-    { id: "LEFT",  label: "◀", cx: dpadCx - 54, cy: dpadCy,      r: padR },
-    { id: "RIGHT", label: "▶", cx: dpadCx + 54, cy: dpadCy,      r: padR },
-    { id: "UP",    label: "▲", cx: dpadCx,      cy: dpadCy - 54, r: padR },
-    { id: "DOWN",  label: "▼", cx: dpadCx,      cy: dpadCy + 54, r: padR },
+    { id: "LEFT",  label: "◀", cx: dpadCx - step, cy: dpadCy,        r: padR },
+    { id: "RIGHT", label: "▶", cx: dpadCx + step, cy: dpadCy,        r: padR },
+    { id: "UP",    label: "▲", cx: dpadCx,        cy: dpadCy - step, r: padR },
+    { id: "DOWN",  label: "▼", cx: dpadCx,        cy: dpadCy + step, r: padR },
 
-    // Right-thumb Action Buttons
-    { id: "FIRE",  label: "GUN",  cx: W - 82,  cy: H - 86,  r: 40, color: "rgba(29, 78, 216, 0.55)" },
-    { id: "JUMP",  label: "JUMP", cx: W - 174, cy: H - 68,  r: 34, color: "rgba(22, 163, 74, 0.55)" },
-    { id: "BONE",  label: "BONE", cx: W - 158, cy: H - 148, r: 28, color: "rgba(217, 119, 6, 0.55)" },
-    { id: "HAT",   label: "HAT",  cx: W - 76,  cy: H - 168, r: 28, color: "rgba(220, 38, 38, 0.55)" }
+    // Right-thumb Action Buttons (well inside bottom-right safe margin)
+    { id: "FIRE",  label: "GUN",  cx: W - 86,  cy: H - 96,  r: 42, color: "rgba(29, 78, 216, 0.58)" },
+    { id: "JUMP",  label: "JUMP", cx: W - 184, cy: H - 78,  r: 36, color: "rgba(22, 163, 74, 0.58)" },
+    { id: "BONE",  label: "BONE", cx: W - 168, cy: H - 164, r: 30, color: "rgba(217, 119, 6, 0.58)" },
+    { id: "HAT",   label: "HAT",  cx: W - 80,  cy: H - 184, r: 30, color: "rgba(220, 38, 38, 0.58)" }
   ];
 }
 
 function findTouchButtonAt(x, y) {
   for (const b of touchUI.buttons) {
-    if (Math.hypot(x - b.cx, y - b.cy) <= b.r + 10) return b;
+    if (Math.hypot(x - b.cx, y - b.cy) <= b.r + 12) return b;
   }
   return null;
 }
@@ -98,7 +104,7 @@ function syncTouchControlsToInput(input) {
       continue;
     }
 
-    // Re-evaluate D-pad direction continuously so sliding thumb between Left/Right works smoothly
+    // Re-evaluate D-pad direction continuously so sliding thumb between directions works smoothly
     if (t.role === "DPAD") {
       const btn = findTouchButtonAt(t.x, t.y);
       const id = btn ? btn.id : t.btnId;
@@ -114,7 +120,6 @@ function syncTouchControlsToInput(input) {
     if (t.btnId === "HAT")  hatHeld = true;
     if (t.btnId === "FIRE") {
       gunHeld = true;
-      // Twin-stick drag on the FIRE button aims in drag direction; tap auto-aims nearest enemy
       const fireBtn = touchUI.buttons.find(b => b.id === "FIRE");
       const dx = t.x - fireBtn.cx;
       const dy = t.y - fireBtn.cy;
@@ -151,15 +156,32 @@ function drawTouchControls() {
   if (touchUI.buttons.length === 0) buildTouchLayout();
 
   ctx.save();
+
+  // Subtle D-pad backing ring so all 4 buttons (◀ ▶ ▲ ▼) stand out clearly
+  ctx.fillStyle = "rgba(15, 23, 42, 0.24)";
+  ctx.strokeStyle = "rgba(248, 250, 252, 0.25)";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.arc(touchUI.dpadCenter.x, touchUI.dpadCenter.y, 94, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+
   for (const b of touchUI.buttons) {
     if (b.id === "HAT" && !hero.hasMissileHat) continue;
     if (b.id === "BONE" && hero.bones <= 0) continue;
 
-    const isPressed = Array.from(touchUI.activeTouches.values()).some(t => t.btnId === b.id);
+    const isPressed = Array.from(touchUI.activeTouches.values()).some(t => {
+      if (t.role === "DPAD") {
+        const hovered = findTouchButtonAt(t.x, t.y);
+        return (hovered ? hovered.id : t.btnId) === b.id;
+      }
+      return t.btnId === b.id;
+    });
+
     ctx.fillStyle = isPressed
-      ? "rgba(250, 204, 21, 0.72)"
-      : (b.color || "rgba(15, 23, 42, 0.48)");
-    ctx.strokeStyle = isPressed ? "#fef08a" : "rgba(248, 250, 252, 0.65)";
+      ? "rgba(250, 204, 21, 0.78)"
+      : (b.color || "rgba(15, 23, 42, 0.56)");
+    ctx.strokeStyle = isPressed ? "#fef08a" : "rgba(248, 250, 252, 0.72)";
     ctx.lineWidth = 2;
 
     ctx.beginPath();
@@ -168,7 +190,7 @@ function drawTouchControls() {
     ctx.stroke();
 
     ctx.fillStyle = isPressed ? "#0f172a" : "#ffffff";
-    ctx.font = "bold 12px monospace";
+    ctx.font = "bold 13px monospace";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText(b.label, b.cx, b.cy);
@@ -178,6 +200,11 @@ function drawTouchControls() {
 
 function initTouchListeners() {
   buildTouchLayout();
+
+  window.addEventListener("orientationchange", () => {
+    touchUI.activeTouches.clear();
+    buildTouchLayout();
+  });
 
   canvas.addEventListener("touchstart", (e) => {
     e.preventDefault();
