@@ -1553,7 +1553,7 @@ function drawSelectScreen() {
   ctx.textAlign = "center";
   ctx.fillStyle = "#facc15";
   ctx.font = "bold 24px monospace";
-  ctx.fillText("UNBOUND RELICS  無界尋寶錄  [INFINITE MODE]", W / 2, 48);
+  ctx.fillText("UNBOUND SEEKERS  無界尋寶錄  [INFINITE MODE]", W / 2, 48);
 
   ctx.fillStyle = "#cbd5e1";
   ctx.font = "12px monospace";
