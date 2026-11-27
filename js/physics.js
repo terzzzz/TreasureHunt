@@ -418,17 +418,23 @@ function stepHero(input, scr) {
       hero.gunReloadTimer = GUN_RELOAD_TIME;
     }
 
-    const bulletSpeed = hero.stats.bulletSpeed * BULLET_SPEED_MULT;
-    game.bullets.push({
-      x: muzzle.x,
-      y: muzzle.y,
-      vx: dirX * bulletSpeed,
-      vy: dirY * bulletSpeed,
-      traveled: 0,
-      dropStartDist: HALF_W * hero.stats.bulletDropRatio * BULLET_DROP_DIST_MULT,
-      damage: 10
-    });
     SFX.beep(640, 0.036, "triangle", 0.06, 240);
+
+    const barrelHit = findSurfaceHit(scr, shoulderX, shoulderY, muzzle.x, muzzle.y);
+    if (barrelHit) {
+      spawnParticles(barrelHit.x, barrelHit.y, "#5c4033", 4, 80);
+    } else {
+      const bulletSpeed = hero.stats.bulletSpeed * BULLET_SPEED_MULT;
+      game.bullets.push({
+        x: muzzle.x,
+        y: muzzle.y,
+        vx: dirX * bulletSpeed,
+        vy: dirY * bulletSpeed,
+        traveled: 0,
+        dropStartDist: HALF_W * hero.stats.bulletDropRatio * BULLET_DROP_DIST_MULT,
+        damage: 10
+      });
+    }
   }
 
   if (input.bonePressed && hero.bones > 0) {
@@ -565,6 +571,54 @@ function detonateCannonBall(m, scr) {
   }
 }
 
+function segmentHitsBox(x1, y1, x2, y2, box) {
+  const minX = box.x, maxX = box.x + box.w;
+  const minY = box.y, maxY = box.y + box.h;
+  let t0 = 0;
+  let t1 = 1;
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+
+  const checks = [
+    [-dx, x1 - minX],
+    [dx,  maxX - x1],
+    [-dy, y1 - minY],
+    [dy,  maxY - y1]
+  ];
+
+  for (let i = 0; i < 4; i++) {
+    const p = checks[i][0];
+    const q = checks[i][1];
+    if (p === 0) {
+      if (q < 0) return null;
+    } else {
+      const r = q / p;
+      if (p < 0) {
+        if (r > t1) return null;
+        if (r > t0) t0 = r;
+      } else {
+        if (r < t0) return null;
+        if (r < t1) t1 = r;
+      }
+    }
+  }
+
+  return { x: x1 + dx * t0, y: y1 + dy * t0, t: t0 };
+}
+
+// Swept check against solid horizontal floors and walls only (bullets pass through ladders and red one-way platforms)
+function findSurfaceHit(scr, x1, y1, x2, y2) {
+  if (!scr || !scr.solids) return null;
+  let best = null;
+  for (const s of scr.solids) {
+    const hit = segmentHitsBox(x1, y1, x2, y2, s);
+    if (hit && (!best || hit.t < best.t)) {
+      best = hit;
+    }
+  }
+  return best;
+}
+
 function stepProjectilesAndPickups(scr) {
   scatterTreasureRoomItems(scr);
 
@@ -606,15 +660,19 @@ function stepProjectilesAndPickups(scr) {
     if (b.traveled >= b.dropStartDist) b.vy += 2200 * DT;
     else b.vy += 260 * DT;
 
+    const prevX = b.x;
+    const prevY = b.y;
     const stepX = b.vx * DT;
     const stepY = b.vy * DT;
     b.x += stepX;
     b.y += stepY;
     b.traveled += Math.hypot(stepX, stepY);
 
-    const hitSolid = scr.solids.some(s => b.x >= s.x && b.x <= s.x + s.w && b.y >= s.y && b.y <= s.y + s.h);
-    if (hitSolid || b.y > game.worldH || b.x < 0 || b.x > game.worldW) {
-      spawnParticles(b.x, b.y, "#5c4033", 4, 80);
+    const hitSurface = findSurfaceHit(scr, prevX, prevY, b.x, b.y);
+    if (hitSurface || b.y > game.worldH || b.x < 0 || b.x > game.worldW) {
+      const fx = hitSurface ? hitSurface.x : b.x;
+      const fy = hitSurface ? hitSurface.y : b.y;
+      spawnParticles(fx, fy, "#5c4033", 4, 80);
       game.bullets.splice(i, 1);
       continue;
     }
@@ -622,7 +680,7 @@ function stepProjectilesAndPickups(scr) {
     let hitEnemy = false;
     for (const e of scr.enemies) {
       if (!e.alive) continue;
-      if (b.x >= e.x && b.x <= e.x + e.w && b.y >= e.y && b.y <= e.y + e.h) {
+      if (segmentHitsBox(prevX, prevY, b.x, b.y, e)) {
         damageEnemy(e, b.damage, b.x, b.y);
         if (typeof spawnBulletHitSparks === "function") {
           spawnBulletHitSparks(b.x, b.y);
@@ -636,14 +694,18 @@ function stepProjectilesAndPickups(scr) {
 
   for (let i = game.bones.length - 1; i >= 0; i--) {
     const bone = game.bones[i];
+    const prevX = bone.x;
+    const prevY = bone.y;
     bone.vy += 760 * DT;
     bone.x += bone.vx * DT;
     bone.y += bone.vy * DT;
     bone.rot += 15 * DT;
 
-    const hitSolid = scr.solids.some(s => bone.x >= s.x && bone.x <= s.x + s.w && bone.y >= s.y && bone.y <= s.y + s.h);
-    if (hitSolid || bone.y > game.worldH || bone.x < -40 || bone.x > game.worldW + 40) {
-      spawnParticles(bone.x, bone.y, "#f8fafc", 8, 130);
+    const hitSurface = findSurfaceHit(scr, prevX, prevY, bone.x, bone.y);
+    if (hitSurface || bone.y > game.worldH || bone.x < -40 || bone.x > game.worldW + 40) {
+      const fx = hitSurface ? hitSurface.x : bone.x;
+      const fy = hitSurface ? hitSurface.y : bone.y;
+      spawnParticles(fx, fy, "#f8fafc", 8, 130);
       SFX.beep(220, 0.08, "triangle", 0.07, 120);
       game.bones.splice(i, 1);
       continue;
