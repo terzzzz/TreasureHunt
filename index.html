@@ -17,7 +17,7 @@
       margin: 0;
       padding: 0;
       width: 100%;
-      height: 100%;
+      height: 100dvh;
       background: #18181b;
       overflow: hidden;
       display: flex;
@@ -29,17 +29,15 @@
     #stage-wrap {
       position: relative;
       width: 100vw;
-      height: 100vh;
-      padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+      height: 100dvh;
+      padding: max(4px, env(safe-area-inset-top)) max(4px, env(safe-area-inset-right)) max(4px, env(safe-area-inset-bottom)) max(4px, env(safe-area-inset-left));
       display: flex;
       align-items: center;
       justify-content: center;
+      overflow: hidden;
     }
     canvas#game {
       display: block;
-      max-width: 100%;
-      max-height: 100%;
-      aspect-ratio: 328 / 207;
       box-shadow: 0 14px 40px rgba(0, 0, 0, 0.65);
       background: #f5f1e6;
       cursor: crosshair;
@@ -52,6 +50,56 @@
   </div>
 
   <script src="js/config.js"></script>
+  <script>
+    (function fitGameViewport() {
+      const targetRatio = (typeof DISPLAY_ASPECT_RATIO !== "undefined") ? DISPLAY_ASPECT_RATIO : (4 / 3);
+
+      function apply() {
+        const vv = window.visualViewport;
+        const vw = Math.floor(vv ? vv.width : window.innerWidth);
+        const vh = Math.floor(vv ? vv.height : window.innerHeight);
+
+        document.documentElement.style.width = vw + "px";
+        document.documentElement.style.height = vh + "px";
+        document.body.style.width = vw + "px";
+        document.body.style.height = vh + "px";
+
+        const wrap = document.getElementById("stage-wrap");
+        const canvas = document.getElementById("game");
+        if (!wrap || !canvas) return;
+
+        wrap.style.width = vw + "px";
+        wrap.style.height = vh + "px";
+
+        const cs = getComputedStyle(wrap);
+        const availW = Math.max(120, vw - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight));
+        const availH = Math.max(120, vh - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom));
+
+        let drawW = availW;
+        let drawH = drawW / targetRatio;
+        if (drawH > availH) {
+          drawH = availH;
+          drawW = drawH * targetRatio;
+        }
+
+        canvas.style.width = Math.floor(drawW) + "px";
+        canvas.style.height = Math.floor(drawH) + "px";
+
+        if (window.scrollY !== 0 || window.scrollX !== 0) {
+          window.scrollTo(0, 0);
+        }
+      }
+
+      apply();
+      window.addEventListener("resize", apply);
+      window.addEventListener("load", apply);
+      window.addEventListener("orientationchange", () => setTimeout(apply, 160));
+      if (window.visualViewport) {
+        window.visualViewport.addEventListener("resize", apply);
+        window.visualViewport.addEventListener("scroll", apply);
+      }
+    })();
+  </script>
   <script src="js/assets.js"></script>
   <script src="js/procgen.js"></script>
   <script src="js/input.js"></script>
