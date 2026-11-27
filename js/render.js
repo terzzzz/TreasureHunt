@@ -21,6 +21,14 @@ const _hitFlashBuffer = (() => {
   return { canvas: c, ctx: c.getContext("2d") };
 })();
 
+const _coinsShineBuffer = (() => {
+  const c = document.createElement("canvas");
+  return { canvas: c, ctx: c.getContext("2d") };
+})();
+
+const _stageCoinsCache = Object.create(null);
+
+
 function drawRedFlashSprite(src, dx, dy, dw, dh, alpha = 0.72) {
   const sw = src.naturalWidth || src.width;
   const sh = src.naturalHeight || src.height;
@@ -42,6 +50,376 @@ function drawRedFlashSprite(src, dx, dy, dw, dh, alpha = 0.72) {
   tctx.restore();
 
   ctx.drawImage(_hitFlashBuffer.canvas, dx, dy, dw, dh);
+}
+
+
+function getCurrentStageFolderKey() {
+  if (typeof stageManager !== "undefined" && stageManager) {
+    const raw = stageManager.stageId
+      || stageManager.currentStageId
+      || stageManager.id
+      || (stageManager.data && (stageManager.data.stageId || stageManager.data.id));
+    if (raw !== undefined && raw !== null && String(raw).trim() !== "") {
+      const str = String(raw).trim();
+      return /^\d+$/.test(str) ? str.padStart(3, "0") : str;
+    }
+  }
+  return "001";
+}
+
+function buildCleanCoinCanvas(rawSrc) {
+  const sw = rawSrc.naturalWidth || rawSrc.width;
+  const sh = rawSrc.naturalHeight || rawSrc.height;
+  if (!sw || !sh) return null;
+
+  const work = document.createElement("canvas");
+  work.width = sw;
+  work.height = sh;
+  const wctx = work.getContext("2d");
+  wctx.drawImage(rawSrc, 0, 0, sw, sh);
+
+  let imgData;
+  try {
+    imgData = wctx.getImageData(0, 0, sw, sh);
+  } catch (_) {
+    return rawSrc;
+  }
+
+  const data = imgData.data;
+  const isNearWhiteBg = (idx) => {
+    const a = data[idx + 3];
+    if (a < 20) return true;
+    const r = data[idx];
+    const g = data[idx + 1];
+    const b = data[idx + 2];
+    const maxC = Math.max(r, g, b);
+    const minC = Math.min(r, g, b);
+    return maxC >= 222 && (maxC - minC) <= 28;
+  };
+
+  // 1. Flood-fill from outer edges so gold highlights inside the coins stay intact
+  const visited = new Uint8Array(sw * sh);
+  const queue = new Int32Array(sw * sh);
+  let head = 0;
+  let tail = 0;
+
+  const pushIfBg = (x, y) => {
+    if (x < 0 || x >= sw || y < 0 || y >= sh) return;
+    const p = y * sw + x;
+    if (visited[p]) return;
+    visited[p] = 1;
+    if (isNearWhiteBg(p * 4)) {
+      queue[tail++] = p;
+    }
+  };
+
+  for (let x = 0; x < sw; x++) {
+    pushIfBg(x, 0);
+    pushIfBg(x, sh - 1);
+  }
+  for (let y = 0; y < sh; y++) {
+    pushIfBg(0, y);
+    pushIfBg(sw - 1, y);
+  }
+
+  while (head < tail) {
+    const p = queue[head++];
+    data[p * 4 + 3] = 0;
+    const x = p % sw;
+    const y = (p - x) / sw;
+    pushIfBg(x - 1, y);
+    pushIfBg(x + 1, y);
+    pushIfBg(x, y - 1);
+    pushIfBg(x, y + 1);
+  }
+
+  // 2. Defringe 1px JPEG white halo along outer coin rims
+  const alphaCopy = new Uint8ClampedArray(sw * sh);
+  for (let p = 0; p < sw * sh; p++) alphaCopy[p] = data[p * 4 + 3];
+
+  for (let y = 1; y < sh - 1; y++) {
+    for (let x = 1; x < sw - 1; x++) {
+      const p = y * sw + x;
+      if (alphaCopy[p] === 0) continue;
+      const touchesTransparent =
+        alphaCopy[p - 1] === 0 ||
+        alphaCopy[p + 1] === 0 ||
+        alphaCopy[p - sw] === 0 ||
+        alphaCopy[p + sw] === 0;
+      if (touchesTransparent) {
+        const idx = p * 4;
+        const r = data[idx];
+        const g = data[idx + 1];
+        const b = data[idx + 2];
+        const maxC = Math.max(r, g, b);
+        const minC = Math.min(r, g, b);
+        if (maxC >= 195 && (maxC - minC) <= 34) {
+          data[idx + 3] = 0;
+        }
+      }
+    }
+  }
+
+  wctx.putImageData(imgData, 0, 0);
+
+  // 3. Tightly crop around the coin pile
+  let minX = sw;
+  let minY = sh;
+  let maxX = -1;
+  let maxY = -1;
+  for (let y = 0; y < sh; y++) {
+    for (let x = 0; x < sw; x++) {
+      if (data[(y * sw + x) * 4 + 3] > 24) {
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+  }
+
+  if (maxX < minX || maxY < minY) return rawSrc;
+
+  const trimW = maxX - minX + 1;
+  const trimH = maxY - minY + 1;
+  const trimmed = document.createElement("canvas");
+  trimmed.width = trimW;
+  trimmed.height = trimH;
+  const tctx = trimmed.getContext("2d");
+  tctx.drawImage(work, minX, minY, trimW, trimH, 0, 0, trimW, trimH);
+
+  return trimmed;
+}
+
+// Loads stage-specific Stages/<stageId>/coins.jpeg (e.g. Stages/001/coins.jpeg) and strips its white background
+function getStageCoinsCanvas() {
+  const stageKey = getCurrentStageFolderKey();
+  let entry = _stageCoinsCache[stageKey];
+
+  if (!entry) {
+    entry = { status: "loading", cleanCanvas: null };
+    _stageCoinsCache[stageKey] = entry;
+
+    const candidates = [];
+    if (typeof stageManager !== "undefined" && stageManager) {
+      const explicitDir = stageManager.basePath || stageManager.stagePath || stageManager.stageDir || stageManager.assetDir;
+      if (explicitDir) {
+        const cleanDir = String(explicitDir).replace(/\/+$/, "");
+        candidates.push(`${cleanDir}/coins.jpeg`);
+      }
+    }
+    candidates.push(`Stages/${stageKey}/coins.jpeg`);
+    candidates.push(`stages/${stageKey}/coins.jpeg`);
+
+    let idx = 0;
+    const probeNext = () => {
+      if (idx >= candidates.length) {
+        entry.status = "missing";
+        return;
+      }
+      const img = new Image();
+      img.onload = () => {
+        entry.cleanCanvas = buildCleanCoinCanvas(img);
+        entry.status = entry.cleanCanvas ? "loaded" : "missing";
+      };
+      img.onerror = () => {
+        idx++;
+        probeNext();
+      };
+      img.src = candidates[idx];
+    };
+    probeNext();
+  }
+
+  return entry.status === "loaded" ? entry.cleanCanvas : null;
+}
+
+
+function drawFourPointSparkle(cx, cy, radius, alpha) {
+  if (alpha <= 0.02 || radius <= 0.3) return;
+  ctx.save();
+  ctx.globalAlpha = Math.min(1, alpha);
+
+  ctx.strokeStyle = "#fef08a";
+  ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  ctx.moveTo(cx - radius, cy);
+  ctx.lineTo(cx + radius, cy);
+  ctx.moveTo(cx, cy - radius);
+  ctx.lineTo(cx, cy + radius);
+  ctx.stroke();
+
+  const diag = radius * 0.45;
+  ctx.strokeStyle = "#facc15";
+  ctx.lineWidth = 1.0;
+  ctx.beginPath();
+  ctx.moveTo(cx - diag, cy - diag);
+  ctx.lineTo(cx + diag, cy + diag);
+  ctx.moveTo(cx + diag, cy - diag);
+  ctx.lineTo(cx - diag, cy + diag);
+  ctx.stroke();
+
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(cx - 1, cy - 1, 2, 2);
+  ctx.restore();
+}
+
+function drawShinyCoinPickup(p, bob) {
+  const cleanCoins = getStageCoinsCanvas();
+  const stageKey = getCurrentStageFolderKey();
+  const stageStatus = _stageCoinsCache[stageKey]?.status || "loading";
+
+  // If a later stage (002+) has no stage-specific coins.jpeg, fall back to the default crown sprite
+  if (!cleanCoins && stageStatus === "missing") {
+    if (typeof EXTRA_SPRITES !== "undefined" && EXTRA_SPRITES.crown && EXTRA_SPRITES.crown.loaded) {
+      ctx.drawImage(EXTRA_SPRITES.crown, p.x, p.y + bob, p.w, p.h);
+    } else {
+      ctx.strokeStyle = "#dc2626";
+      ctx.lineWidth = 2.2;
+      ctx.beginPath();
+      ctx.moveTo(p.x + 3, p.y + p.h - 3 + bob);
+      ctx.lineTo(p.x + 2, p.y + 5 + bob);
+      ctx.lineTo(p.x + 8, p.y + 11 + bob);
+      ctx.lineTo(p.x + 13, p.y + 2 + bob);
+      ctx.lineTo(p.x + 18, p.y + 11 + bob);
+      ctx.lineTo(p.x + 24, p.y + 5 + bob);
+      ctx.lineTo(p.x + 23, p.y + p.h - 3 + bob);
+      ctx.closePath();
+      ctx.stroke();
+    }
+    return;
+  }
+
+  const phaseOffset = p.x * 0.019 + p.y * 0.013;
+  const t = game.elapsedTime + phaseOffset;
+  const pulse = 0.5 + 0.5 * Math.sin(t * 6.5);
+
+  const aspect = cleanCoins
+    ? (cleanCoins.width / Math.max(1, cleanCoins.height))
+    : 1.42;
+  const drawH = Math.max(p.h * 1.18, 29);
+  const drawW = Math.round(drawH * aspect);
+
+  const drawX = Math.round(p.x + (p.w - drawW) * 0.5);
+  const drawY = Math.round(p.y + p.h - drawH + bob);
+  const cx = drawX + drawW * 0.5;
+  const cy = drawY + drawH * 0.52;
+
+  // 1. Pulsing golden aura & subtle rotating light beams behind the coins
+  ctx.save();
+  const glowR = Math.max(drawW, drawH) * (0.72 + pulse * 0.16);
+  const aura = ctx.createRadialGradient(cx, cy, 2, cx, cy, glowR);
+  aura.addColorStop(0.0, `rgba(254, 240, 138, ${0.42 + pulse * 0.25})`);
+  aura.addColorStop(0.55, `rgba(250, 204, 21, ${0.20 + pulse * 0.14})`);
+  aura.addColorStop(1.0, "rgba(245, 158, 11, 0)");
+  ctx.fillStyle = aura;
+  ctx.beginPath();
+  ctx.arc(cx, cy, glowR, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.translate(cx, cy);
+  ctx.rotate(t * 0.85);
+  ctx.fillStyle = `rgba(254, 240, 138, ${0.14 + pulse * 0.12})`;
+  for (let r = 0; r < 4; r++) {
+    ctx.rotate(Math.PI / 2);
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(-3.5, -glowR * 0.92);
+    ctx.lineTo(3.5, -glowR * 0.92);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+
+  // 2. Coin pile sprite with periodic diagonal specular shine sweep clipped to the coins
+  if (cleanCoins) {
+    const bw = Math.max(1, drawW);
+    const bh = Math.max(1, drawH);
+    if (_coinsShineBuffer.canvas.width !== bw || _coinsShineBuffer.canvas.height !== bh) {
+      _coinsShineBuffer.canvas.width = bw;
+      _coinsShineBuffer.canvas.height = bh;
+    }
+
+    const sctx = _coinsShineBuffer.ctx;
+    sctx.save();
+    sctx.globalCompositeOperation = "source-over";
+    sctx.clearRect(0, 0, bw, bh);
+    sctx.imageSmoothingEnabled = true;
+    sctx.imageSmoothingQuality = "high";
+    sctx.drawImage(cleanCoins, 0, 0, bw, bh);
+
+    // Sweep a glossy highlight across the coin faces every ~1.6s
+    const sweepCycle = (t * 0.62) % 1.0;
+    if (sweepCycle < 0.45) {
+      const progress = sweepCycle / 0.45;
+      const bandCenter = -bw * 0.35 + progress * (bw * 1.70);
+      sctx.globalCompositeOperation = "source-atop";
+      const sheen = sctx.createLinearGradient(
+        bandCenter - bw * 0.22,
+        0,
+        bandCenter + bw * 0.22,
+        bh * 0.75
+      );
+      sheen.addColorStop(0.0, "rgba(255, 255, 255, 0)");
+      sheen.addColorStop(0.5, "rgba(255, 253, 224, 0.82)");
+      sheen.addColorStop(1.0, "rgba(255, 255, 255, 0)");
+      sctx.fillStyle = sheen;
+      sctx.fillRect(0, 0, bw, bh);
+    }
+    sctx.restore();
+
+    ctx.drawImage(_coinsShineBuffer.canvas, drawX, drawY, bw, bh);
+  } else {
+    // Fallback stacked gold coins if image is still loading
+    const offsets = [
+      { ox: -7, oy: 4 },
+      { ox: 7, oy: 4 },
+      { ox: 0, oy: -2 }
+    ];
+    for (const c of offsets) {
+      ctx.fillStyle = "#facc15";
+      ctx.strokeStyle = "#92400e";
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.arc(cx + c.ox, cy + c.oy, 7.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.strokeStyle = "#fef08a";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(cx + c.ox, cy + c.oy, 4.5, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+
+  // 3. Staggered twinkling 4-point star glints on the coins
+  const sparkSpots = [
+    { rx: 0.48, ry: 0.22, speed: 3.1, offset: 0.0 },
+    { rx: 0.22, ry: 0.56, speed: 2.7, offset: 1.9 },
+    { rx: 0.76, ry: 0.60, speed: 3.4, offset: 3.7 }
+  ];
+  for (const sp of sparkSpots) {
+    const wave = Math.sin(t * sp.speed + sp.offset);
+    if (wave > 0.25) {
+      const intensity = (wave - 0.25) / 0.75;
+      drawFourPointSparkle(
+        drawX + drawW * sp.rx,
+        drawY + drawH * sp.ry,
+        2.6 + intensity * 3.8,
+        0.45 + intensity * 0.55
+      );
+    }
+  }
+
+  // 4. Tiny rising golden shimmer motes
+  for (let m = 0; m < 2; m++) {
+    const motePhase = (t * 0.95 + m * 0.5) % 1.0;
+    const mx = cx + (m === 0 ? -drawW * 0.24 : drawW * 0.24) + Math.sin(t * 4 + m) * 2.5;
+    const my = drawY + drawH * 0.35 - motePhase * 13;
+    ctx.fillStyle = `rgba(254, 240, 138, ${(1 - motePhase) * 0.85})`;
+    ctx.fillRect(mx - 1, my - 1, 2, 2);
+  }
 }
 
 // Automatically strips white background halo & the baked-in stone floor pedestal beneath the Knifer's boots
@@ -200,7 +578,6 @@ function getCleanKniferCanvas() {
       rowStats.push({ y, span, count, segments, fill });
     }
 
-    // Walk upward from the very bottom row while rows form a single solid wide bar (the floor pedestal)
     let slabTopY = null;
     let maxSlabSpan = 0;
     for (let i = rowStats.length - 1; i >= 0; i--) {
@@ -224,7 +601,6 @@ function getCleanKniferCanvas() {
       }
     }
 
-    // Verify rows immediately above slabTopY are narrower or split into two separate boots
     if (slabTopY !== null && slabTopY > scanStart) {
       const aboveIdx = slabTopY - 1 - scanStart;
       const above = rowStats[aboveIdx];
@@ -674,22 +1050,7 @@ function drawScreenEntities(scr) {
     if (p.collected) continue;
     const bob = Math.sin(game.elapsedTime * 5) * 3;
     if (p.type === "crown") {
-      if (EXTRA_SPRITES.crown.loaded) {
-        ctx.drawImage(EXTRA_SPRITES.crown, p.x, p.y + bob, p.w, p.h);
-      } else {
-        ctx.strokeStyle = "#dc2626";
-        ctx.lineWidth = 2.2;
-        ctx.beginPath();
-        ctx.moveTo(p.x + 3, p.y + p.h - 3 + bob);
-        ctx.lineTo(p.x + 2, p.y + 5 + bob);
-        ctx.lineTo(p.x + 8, p.y + 11 + bob);
-        ctx.lineTo(p.x + 13, p.y + 2 + bob);
-        ctx.lineTo(p.x + 18, p.y + 11 + bob);
-        ctx.lineTo(p.x + 24, p.y + 5 + bob);
-        ctx.lineTo(p.x + 23, p.y + p.h - 3 + bob);
-        ctx.closePath();
-        ctx.stroke();
-      }
+      drawShinyCoinPickup(p, bob);
     } else if (p.type === "chicken") {
       if (EXTRA_SPRITES.chicken.loaded) {
         ctx.drawImage(EXTRA_SPRITES.chicken, p.x, p.y + bob, p.w, p.h);
