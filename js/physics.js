@@ -402,8 +402,9 @@ function stepHero(input, scr) {
     const fireAngle = hero.aimAngle + spreadAngle;
     const dirX = Math.cos(fireAngle);
     const dirY = Math.sin(fireAngle);
-    const muzzleX = shoulderX + dirX * 18;
-    const muzzleY = shoulderY + dirY * 18;
+    const muzzle = typeof getHeroGunMuzzlePos === "function"
+      ? getHeroGunMuzzlePos()
+      : { x: shoulderX + dirX * 18, y: shoulderY + dirY * 18 };
 
     hero.gunCooldown = GUN_SHOT_INTERVAL;
     hero.gunBurstRemaining--;
@@ -413,8 +414,10 @@ function stepHero(input, scr) {
 
     const bulletSpeed = hero.stats.bulletSpeed * BULLET_SPEED_MULT;
     game.bullets.push({
-      x: muzzleX, y: muzzleY,
-      vx: dirX * bulletSpeed, vy: dirY * bulletSpeed,
+      x: muzzle.x,
+      y: muzzle.y,
+      vx: dirX * bulletSpeed,
+      vy: dirY * bulletSpeed,
       traveled: 0,
       dropStartDist: HALF_W * hero.stats.bulletDropRatio * BULLET_DROP_DIST_MULT,
       damage: 10
@@ -605,7 +608,7 @@ function stepProjectilesAndPickups(scr) {
 
     const hitSolid = scr.solids.some(s => b.x >= s.x && b.x <= s.x + s.w && b.y >= s.y && b.y <= s.y + s.h);
     if (hitSolid || b.y > game.worldH || b.x < 0 || b.x > game.worldW) {
-      spawnParticles(b.x, b.y, "#1e3a8a", 4, 80);
+      spawnParticles(b.x, b.y, "#5c4033", 4, 80);
       game.bullets.splice(i, 1);
       continue;
     }
@@ -615,6 +618,9 @@ function stepProjectilesAndPickups(scr) {
       if (!e.alive) continue;
       if (b.x >= e.x && b.x <= e.x + e.w && b.y >= e.y && b.y <= e.y + e.h) {
         damageEnemy(e, b.damage, b.x, b.y);
+        if (typeof spawnBulletHitSparks === "function") {
+          spawnBulletHitSparks(b.x, b.y);
+        }
         hitEnemy = true;
         break;
       }
