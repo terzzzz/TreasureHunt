@@ -2310,7 +2310,7 @@ function drawSelectScreen() {
   ctx.textAlign = "center";
   ctx.fillStyle = "#facc15";
   ctx.font = "bold 21px sans-serif";
-  const titleText = "UNBOUND SEEKERS  無界尋寶錄  アンバウンド・シーカーズ";
+  const titleText = "UNBOUND SEEKERS  無界尋寶錄  無界のトレジャーハンター";
   ctx.fillText(titleText, W / 2, 47);
 
   if (typeof drawGameBadge === "function") {
