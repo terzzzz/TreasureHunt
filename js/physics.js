@@ -2,10 +2,14 @@
 "use strict";
 
 // Machine Gun & Bullet Pace Tuning
-const GUN_BURST_COUNT = 5;        // Rounds per burst
-const GUN_SHOT_INTERVAL = 0.095;  // Seconds between shots inside a burst
-const GUN_RELOAD_TIME = 0.68;     // Seconds pause between bursts
-const BULLET_SPEED_MULT = 0.80;   // -20% bullet speed
+const GUN_BURST_COUNT = 5;           // Rounds per burst
+const GUN_SHOT_INTERVAL = 0.095;     // Seconds between shots inside a burst
+const GUN_RELOAD_TIME = 0.68;        // Seconds pause between bursts
+const BULLET_SPEED_MULT = 0.56;      // -30% bullet speed compared to previous 0.80
+const BULLET_DROP_DIST_MULT = 0.42;  // Starts falling on ground much earlier
+
+// Normal Player Sight Range (used even when hero.traits.blind is active)
+const NORMAL_PLAYER_VISION_RANGE = 275;
 
 // Super Cannon (頂帽大炮) Tuning
 const CANNON_ROUNDS_PER_ROOM = 2;                        // Limited to 2 rounds per room
@@ -15,8 +19,8 @@ const CANNON_AOE_RADIUS = 115;                           // Area of effect radiu
 const CANNON_SPIN_RAD_PER_SEC = (3 * Math.PI * 2) / 0.8; // 3 full rotations per 0.8 sec
 
 // Start-Screen Alien Tuning
-const ALIEN_SAFE_START_SEC = 10.0;   // Holds fire for the first 10 seconds of gameplay
-const ALIEN_SIGHT_RANGE = 220;       // Fits inside the 2x zoomed camera (240px half-view)
+const ALIEN_SAFE_START_SEC = 10.0;    // Holds fire for the first 10 seconds of gameplay
+const ALIEN_SIGHT_RANGE = 220;        // Fits inside the 2x zoomed camera (240px half-view)
 const ALIEN_CANNON_SPEED_MULT = 0.70; // -30% cannon projectile speed
 
 const TREASURE_RELIC_DEFS = [
@@ -122,13 +126,11 @@ function scatterTreasureRoomItems(scr) {
   addSurfaceSpots(scr.solids);
   addSurfaceSpots(scr.oneWay);
 
-  // Fallback spots along the main floor if a custom vault layout is compact
   if (spots.length < 3) {
     const floorY = game.worldH - 34;
     [240, 420, 600].forEach(fx => spots.push({ x: fx, surfaceY: floorY }));
   }
 
-  // Fisher-Yates shuffle so the 3 chests scatter to different spots every run
   for (let i = spots.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [spots[i], spots[j]] = [spots[j], spots[i]];
@@ -192,6 +194,40 @@ function updateCamera() {
   const targetY = Math.max(0, Math.min(game.worldH - viewH, hero.y + hero.h / 2 - viewH / 2));
   game.camX += (targetX - game.camX) * 0.16;
   game.camY += (targetY - game.camY) * 0.16;
+}
+
+// Monsters remain passive until the player sees them on screen within normal vision range (even for Blind hunters)
+function hasPlayerSeenEnemy(e) {
+  if (!e || !e.alive) return false;
+  if (e.seenByPlayer) return true;
+  if (game.state !== "PLAY") return false;
+
+  const zoom = getActiveCamZoom();
+  const viewLeft = game.camX;
+  const viewRight = game.camX + W / zoom;
+  const viewTop = game.camY;
+  const viewBottom = game.camY + H / zoom;
+
+  const onScreen =
+    (e.x + e.w) > viewLeft &&
+    e.x < viewRight &&
+    (e.y + e.h) > viewTop &&
+    e.y < viewBottom;
+
+  if (!onScreen) return false;
+
+  const heroCx = hero.x + hero.w * 0.5;
+  const heroCy = hero.y + hero.h * 0.5;
+  const enemyCx = e.x + e.w * 0.5;
+  const enemyCy = e.y + e.h * 0.5;
+  const dist = Math.hypot(enemyCx - heroCx, enemyCy - heroCy);
+
+  if (dist <= NORMAL_PLAYER_VISION_RANGE) {
+    e.seenByPlayer = true;
+    return true;
+  }
+
+  return false;
 }
 
 function canDropThroughOneWay(scr) {
@@ -380,7 +416,7 @@ function stepHero(input, scr) {
       x: muzzleX, y: muzzleY,
       vx: dirX * bulletSpeed, vy: dirY * bulletSpeed,
       traveled: 0,
-      dropStartDist: HALF_W * hero.stats.bulletDropRatio,
+      dropStartDist: HALF_W * hero.stats.bulletDropRatio * BULLET_DROP_DIST_MULT,
       damage: 10
     });
     SFX.beep(640, 0.036, "triangle", 0.06, 240);
@@ -558,8 +594,8 @@ function stepProjectilesAndPickups(scr) {
 
   for (let i = game.bullets.length - 1; i >= 0; i--) {
     const b = game.bullets[i];
-    if (b.traveled >= b.dropStartDist) b.vy += 1850 * DT;
-    else b.vy += 90 * DT;
+    if (b.traveled >= b.dropStartDist) b.vy += 2200 * DT;
+    else b.vy += 260 * DT;
 
     const stepX = b.vx * DT;
     const stepY = b.vy * DT;
@@ -787,6 +823,7 @@ function snapEnemyToGround(scr, e) {
 function damageEnemy(enemy, dmg, hitX, hitY) {
   enemy.hp -= dmg;
   enemy.hurtTimer = 0.14;
+  enemy.seenByPlayer = true; // Taking damage alerts the enemy even from off-screen
   spawnParticles(hitX, hitY, "#dc2626", 6, 120);
   SFX.beep(190, 0.07, "square", 0.07, 110);
 
@@ -839,18 +876,21 @@ function stepEnemies(scr) {
     if (!e.alive) continue;
     if (e.hurtTimer > 0) e.hurtTimer = Math.max(0, e.hurtTimer - DT);
 
+    // Gate all active/attacking AI until the player sees the monster on screen within normal vision range
+    const playerSawEnemy = hasPlayerSeenEnemy(e);
+
     if (e.kind === "alien") {
-      if (game.state === "PLAY") {
+      if (game.state === "PLAY" && playerSawEnemy) {
         e.activeTimer = (e.activeTimer || 0) + DT;
       }
       const ex = e.x + e.w * 0.5;
       const hx = hero.x + hero.w * 0.5;
       const dx = hx - ex;
       const dy = Math.abs((hero.y + hero.h) - (e.y + e.h));
-      e.facing = dx < 0 ? -1 : 1;
+      if (playerSawEnemy) e.facing = dx < 0 ? -1 : 1;
       snapEnemyToGround(scr, e);
 
-      if (!e.hasFiredCannon && game.state === "PLAY" && e.activeTimer >= ALIEN_SAFE_START_SEC) {
+      if (playerSawEnemy && !e.hasFiredCannon && game.state === "PLAY" && e.activeTimer >= ALIEN_SAFE_START_SEC) {
         const inSight = Math.abs(dx) <= ALIEN_SIGHT_RANGE && dy <= 110;
         const shouldEngage = inSight || e.hp < e.maxHp;
         if (shouldEngage && !e.cannonWindingUp) {
@@ -895,6 +935,17 @@ function stepEnemies(scr) {
     if (e.kind === "blade") {
       if (e.slashCooldown > 0) e.slashCooldown = Math.max(0, e.slashCooldown - DT);
       if (e.slashTimer > 0) e.slashTimer = Math.max(0, e.slashTimer - DT);
+
+      if (!playerSawEnemy) {
+        e.alerted = false;
+        e.aggroTimer = 0;
+        e.animTimer += DT;
+        e.x += e.vx * DT;
+        if (e.x <= e.minX) { e.x = e.minX; e.vx = Math.abs(e.vx); e.facing = 1; }
+        if (e.x + e.w >= e.maxX) { e.x = e.maxX - e.w; e.vx = -Math.abs(e.vx); e.facing = -1; }
+        snapEnemyToGround(scr, e);
+        continue;
+      }
 
       const ex = e.x + e.w * 0.5;
       const hx = hero.x + hero.w * 0.5;
@@ -948,6 +999,24 @@ function stepEnemies(scr) {
     if (e.kind === "knifer") {
       if (e.aggroTimer > 0) e.aggroTimer = Math.max(0, e.aggroTimer - DT);
       if (e.dashCooldown > 0) e.dashCooldown = Math.max(0, e.dashCooldown - DT);
+
+      if (!playerSawEnemy) {
+        e.alerted = false;
+        e.aggroTimer = 0;
+        e.aiState = "PATROL";
+        e.animTimer += DT * 0.65;
+        e.x += e.vx * DT;
+        if (e.x <= e.minX) {
+          e.x = e.minX;
+          e.vx = Math.abs(e.vx);
+        } else if (e.x + e.w >= e.maxX) {
+          e.x = e.maxX - e.w;
+          e.vx = -Math.abs(e.vx);
+        }
+        e.facing = e.vx < 0 ? -1 : 1;
+        snapEnemyToGround(scr, e);
+        continue;
+      }
 
       const eCenterX = e.x + e.w * 0.5;
       const hCenterX = hero.x + hero.w * 0.5;
@@ -1030,6 +1099,19 @@ function stepEnemies(scr) {
     if (e.kind === "giant") {
       if (e.alertTimer > 0) e.alertTimer = Math.max(0, e.alertTimer - DT);
       if (e.chargeCooldown > 0) e.chargeCooldown = Math.max(0, e.chargeCooldown - DT);
+
+      if (!playerSawEnemy) {
+        e.alerted = false;
+        e.aggroTimer = 0;
+        e.aiState = "PATROL";
+        e.animTimer += DT;
+        e.x += e.vx * DT;
+        e.weaponAngle = -0.35 + Math.sin(Math.floor(e.animTimer * 8)) * 0.12;
+        if (e.x <= e.minX) { e.x = e.minX; e.vx = Math.abs(e.vx); e.facing = 1; }
+        if (e.x + e.w >= e.maxX) { e.x = e.maxX - e.w; e.vx = -Math.abs(e.vx); e.facing = -1; }
+        snapEnemyToGround(scr, e);
+        continue;
+      }
 
       const gx = e.x + e.w * 0.5;
       const hx = hero.x + hero.w * 0.5;
