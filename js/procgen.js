@@ -455,10 +455,13 @@ function generateProceduralScreen(runSeed, stageIndex) {
     pickups.push({ type: "crown", x: px, y: py, w: 28, h: 26, collected: false });
   }
 
+ const bgPool = ["bg001", "bg002", "bg003"];
+  const bgTemplate = bgPool[(stageIndex + randInt(0, 1)) % bgPool.length];
+
   return {
     id: `random.${String(stageIndex).padStart(2, "0")}`,
     roomType: "RANDOM",
-    bgTemplate: "bg001",
+    bgTemplate,
     worldW,
     worldH,
     pageLeft: stageIndex * 2 + 1,
@@ -478,7 +481,7 @@ function generateBossScreen(transitions) {
   return {
     id: "boss_chamber",
     roomType: "BOSS",
-    bgTemplate: "bg001",
+    bgTemplate: "bg003",
     worldW: W,
     worldH: H,
     pageLeft: "BOSS",
@@ -521,7 +524,7 @@ function generateTreasureScreen(transitions) {
   return {
     id: "treasure_vault",
     roomType: "TREASURE",
-    bgTemplate: "bg001",
+    bgTemplate: "bg002",
     isFinal: true,
     worldW: W,
     worldH: H,
