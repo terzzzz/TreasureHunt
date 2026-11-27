@@ -2,7 +2,7 @@
 "use strict";
 
 // Machine Gun & Bullet Pace Tuning
-const GUN_BURST_COUNT = 5;           // Rounds per burst
+const GUN_BURST_COUNT = 6;           // Rounds per burst
 const GUN_SHOT_INTERVAL = 0.095;     // Seconds between shots inside a burst
 const GUN_RELOAD_TIME = 0.68;        // Seconds pause between bursts
 const BULLET_SPEED_MULT = 0.56;      // -30% bullet speed compared to previous 0.80
