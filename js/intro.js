@@ -19,7 +19,7 @@ const GAME_BADGE_SPRITE = (() => {
     const octx = off.getContext("2d");
     octx.drawImage(entry.img, sx, sy, cropSize, cropSize, 0, 0, cropSize, cropSize);
 
-    // Strip any remaining light-gray/white corner pixels outside the medallion rim
+    // Strip outer light-gray/white corner pixels outside the medallion rim
     try {
       const imgData = octx.getImageData(0, 0, cropSize, cropSize);
       const data = imgData.data;
@@ -62,7 +62,7 @@ const GAME_BADGE_SPRITE = (() => {
       }
       octx.putImageData(imgData, 0, 0);
     } catch (_) {
-      // Fallback for file:// local browsing where getImageData is restricted
+      // Fallback for local file:// browsing where getImageData is restricted
     }
 
     entry.canvas = off;
@@ -88,43 +88,70 @@ function drawGameBadge(cx, cy, diameter, alpha = 1.0) {
 }
 
 const INTRO_CRAWL_LINES = [
+  // Stanza 1: Traditional Chinese / English / Japanese
   {
-    text: "話說一個人若無夢想，",
-    yRatio: 0.31,
-    start: 0.30,
-    dur: 1.15,
-    font: 'bold 28px "Microsoft JhengHei", "PingFang TC", "Noto Sans TC", sans-serif',
+    text: "話說一個人若無夢想，同條鹹魚有咩分別呢？",
+    yRatio: 0.23,
+    start: 0.25,
+    dur: 1.10,
+    font: 'bold 25px "Microsoft JhengHei", "PingFang TC", "Noto Sans TC", sans-serif',
     color: "#f8fafc"
   },
   {
-    text: "同條鹹魚有咩分別呢？",
-    yRatio: 0.39,
-    start: 1.25,
-    dur: 1.15,
-    font: 'bold 28px "Microsoft JhengHei", "PingFang TC", "Noto Sans TC", sans-serif',
-    color: "#e2e8f0"
+    text: "If a person has no dream, how are they different from a salted fish?",
+    yRatio: 0.30,
+    start: 0.70,
+    dur: 1.10,
+    font: "bold 15.5px sans-serif",
+    color: "#cbd5e1"
   },
   {
+    text: "夢を持たない人間など、塩漬けの魚と何の違いがあるだろうか？",
+    yRatio: 0.355,
+    start: 1.10,
+    dur: 1.10,
+    font: '15px "Yu Gothic", "Hiragino Kaku Gothic ProN", "Meiryo", sans-serif',
+    color: "#94a3b8"
+  },
+
+  // Stanza 2: Traditional Chinese / English / Japanese
+  {
     text: "咁如果係身體有障礙呢。。。",
-    yRatio: 0.52,
-    start: 2.50,
-    dur: 1.15,
-    font: 'bold 28px "Microsoft JhengHei", "PingFang TC", "Noto Sans TC", sans-serif',
+    yRatio: 0.47,
+    start: 2.15,
+    dur: 1.05,
+    font: 'bold 24px "Microsoft JhengHei", "PingFang TC", "Noto Sans TC", sans-serif',
     color: "#f8fafc"
   },
   {
     text: "都無礙我地追夢！我要尋寶！",
-    yRatio: 0.61,
-    start: 3.45,
-    dur: 1.20,
-    font: 'bold 32px "Microsoft JhengHei", "PingFang TC", "Noto Sans TC", sans-serif',
+    yRatio: 0.545,
+    start: 2.75,
+    dur: 1.15,
+    font: 'bold 29px "Microsoft JhengHei", "PingFang TC", "Noto Sans TC", sans-serif',
     color: "#facc15"
+  },
+  {
+    text: "Even with physical barriers... nothing stops us from chasing our dreams! Let's hunt for treasure!",
+    yRatio: 0.625,
+    start: 3.30,
+    dur: 1.10,
+    font: "bold 15px sans-serif",
+    color: "#fef08a"
+  },
+  {
+    text: "たとえ身体に障がいがあっても…夢を追う妨げにはならない！お宝を探しに行くぞ！",
+    yRatio: 0.685,
+    start: 3.75,
+    dur: 1.10,
+    font: 'bold 14.5px "Yu Gothic", "Hiragino Kaku Gothic ProN", "Meiryo", sans-serif',
+    color: "#fde047"
   }
 ];
 
-const INTRO_PROMPT_TEXT = "Press any key.";
-const INTRO_PROMPT_START = 4.35;
-const INTRO_TOTAL_DURATION = 4.70;
+const INTRO_PROMPT_TEXT = "Press any key   |   按任意鍵繼續   |   いずれかのキーを押してください";
+const INTRO_PROMPT_START = 4.55;
+const INTRO_TOTAL_DURATION = 4.95;
 
 const introCrawlState = {
   startTime: null,
@@ -177,17 +204,17 @@ function drawIntroCrawlScreen() {
 
   // Dark theatrical backdrop
   ctx.save();
-  ctx.fillStyle = "rgba(10, 15, 28, 0.88)";
+  ctx.fillStyle = "rgba(10, 15, 28, 0.89)";
   ctx.fillRect(0, 0, W, H);
 
   // Dull background badge emblem
   const badgeFade = Math.min(1, elapsed / 1.1);
-  const badgePulse = 0.21 + 0.025 * Math.sin(now * 2.0);
-  drawGameBadge(HALF_W, H * 0.48, 455, badgeFade * badgePulse);
+  const badgePulse = 0.20 + 0.025 * Math.sin(now * 2.0);
+  drawGameBadge(HALF_W, H * 0.47, 455, badgeFade * badgePulse);
 
   const vignette = ctx.createRadialGradient(HALF_W, H * 0.48, 120, HALF_W, H * 0.48, W * 0.62);
   vignette.addColorStop(0, "rgba(15, 23, 42, 0.0)");
-  vignette.addColorStop(1, "rgba(2, 6, 23, 0.62)");
+  vignette.addColorStop(1, "rgba(2, 6, 23, 0.64)");
   ctx.fillStyle = vignette;
   ctx.fillRect(0, 0, W, H);
 
@@ -213,12 +240,12 @@ function drawIntroCrawlScreen() {
     if (rawT <= 0) continue;
 
     const ease = 1 - Math.pow(1 - rawT, 3);
-    const riseOffset = (1 - ease) * 42;
+    const riseOffset = (1 - ease) * 38;
 
     ctx.save();
     ctx.globalAlpha = ease;
     ctx.font = item.font;
-    ctx.shadowColor = "rgba(0, 0, 0, 0.92)";
+    ctx.shadowColor = "rgba(0, 0, 0, 0.94)";
     ctx.shadowBlur = 12;
     ctx.shadowOffsetY = 3;
     ctx.fillStyle = item.color;
@@ -226,17 +253,17 @@ function drawIntroCrawlScreen() {
     ctx.restore();
   }
 
-  // Pulsing "Press any key." prompt
+  // Pulsing trilingual prompt
   const promptT = Math.max(0, Math.min(1, (elapsed - INTRO_PROMPT_START) / 0.75));
   if (promptT > 0) {
     const pulse = 0.55 + 0.45 * Math.sin(now * 4.2);
     ctx.save();
     ctx.globalAlpha = promptT * pulse;
-    ctx.font = "bold 17px monospace";
+    ctx.font = "bold 15px sans-serif";
     ctx.fillStyle = "#38bdf8";
-    ctx.shadowColor = "rgba(0, 0, 0, 0.9)";
+    ctx.shadowColor = "rgba(0, 0, 0, 0.92)";
     ctx.shadowBlur = 8;
-    ctx.fillText(INTRO_PROMPT_TEXT, HALF_W, H * 0.83);
+    ctx.fillText(INTRO_PROMPT_TEXT, HALF_W, H * 0.85);
     ctx.restore();
   }
 
