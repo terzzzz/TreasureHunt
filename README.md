@@ -1,6 +1,6 @@
-# UNBOUND RELICS (無界尋寶錄)
+# UNBOUND SEEKERS (無界尋寶錄)
 
-**UNBOUND RELICS** is an infinite, seeded 2D action-platformer set across a dark dungeon canvas layered over the ruled pages of an explorer's field notebook. Assemble a custom relic hunter by combining physical and sensory traits, loot the Super Cannon Hat in the entry chamber, descend through procedurally generated floors where enemy squads and attack power scale endlessly, and decide when to cash out against the Vault Warden—or push deeper until a single blow becomes fatal.
+**UNBOUND SEEKERS** is an infinite, seeded 2D action-platformer set across a dark dungeon canvas layered over the ruled pages of an explorer's field notebook. Assemble a custom relic hunter by combining physical and sensory traits, loot the Super Cannon Hat in the entry chamber, descend through procedurally generated floors where enemy squads and attack power scale endlessly, and decide when to cash out against the Vault Warden—or push deeper until a single blow becomes fatal.
 
 ---
 
