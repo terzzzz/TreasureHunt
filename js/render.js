@@ -1531,6 +1531,11 @@ function drawHowToPlayScreen() {
 }
 
 function drawSelectScreen() {
+  if (typeof drawIntroCrawlScreen === "function" && setup.showIntroScreen !== false) {
+    drawIntroCrawlScreen();
+    return;
+  }
+
   if (setup.showHowToPlay) {
     drawHowToPlayScreen();
     return;
@@ -1647,7 +1652,7 @@ function drawSelectScreen() {
   const previewStats = computeHunterStats(setup.selected);
   const previewBob = Math.sin(nowSec * 3.2) * 1.5;
 
-drawLayeredCharacter(
+  drawLayeredCharacter(
     prevX + prevW / 2,
     previewFloorY + previewBob,
     2.8,
@@ -1734,6 +1739,7 @@ drawLayeredCharacter(
 
 window.addEventListener("keydown", (e) => {
   if (typeof game === "undefined" || game.state !== "SELECT" || typeof setup === "undefined") return;
+  if (setup.showIntroScreen !== false) return;
 
   if (setup.showHowToPlay) {
     if (["Escape", "Enter", " ", "?", "/", "F1", "t", "T"].includes(e.key)) {
