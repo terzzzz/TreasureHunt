@@ -87,5 +87,6 @@ Development history:
 
 25/11/26: kick-start, game char design, difficulty, game style.
 26/11/26: decide to switch it to infinite generative style.
+27/11/26: Adding enemies , bgd template, audio, adjust firepower.
 
 
