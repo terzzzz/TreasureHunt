@@ -1553,7 +1553,19 @@ function drawSelectScreen() {
   ctx.textAlign = "center";
   ctx.fillStyle = "#facc15";
   ctx.font = "bold 24px monospace";
-  ctx.fillText("UNBOUND SEEKERS  無界尋寶錄  [INFINITE MODE]", W / 2, 48);
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#facc15";
+  ctx.font = "bold 24px monospace";
+  const titleText = "UNBOUND SEEKERS  無界尋寶錄  [INFINITE MODE]";
+  ctx.fillText(titleText, W / 2, 48);
+
+  if (typeof drawGameBadge === "function") {
+    const titleHalfW = ctx.measureText(titleText).width * 0.5;
+    const miniBadgeSize = 44;
+    const badgeOffsetX = titleHalfW + miniBadgeSize * 0.5 + 14;
+    drawGameBadge(HALF_W - badgeOffsetX, 45, miniBadgeSize, 0.96);
+    drawGameBadge(HALF_W + badgeOffsetX, 45, miniBadgeSize, 0.96);
+  }
 
   ctx.fillStyle = "#cbd5e1";
   ctx.font = "12px monospace";
