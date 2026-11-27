@@ -1393,7 +1393,7 @@ function drawHowToPlayScreen() {
         "• A / D : Move Left / Right",
         "• W / S : Climb Ladder (S+SPACE: Drop)",
         "• SPACE : Jump",
-        "• Mouse + L-Click : 5-Burst Gun",
+        "• Mouse + L-Click : 6-Burst Gun",
         "• R-Click : Throw Bone (15% Enemy HP)",
         "• F : Super Cannon (2/Room, 200 AoE)",
         "• M : Mute BGM  |  ESC : Char Select"
@@ -1416,7 +1416,7 @@ function drawHowToPlayScreen() {
         "• A / D ：左右移動",
         "• W / S ：攀爬梯子 (S+空白鍵 下跳)",
         "• 空白鍵 ：跳躍",
-        "• 滑鼠瞄準 + 左鍵 ：5連發機槍",
+        "• 滑鼠瞄準 + 左鍵 ：6連發機槍",
         "• 滑鼠右鍵 ：投擲骨頭 (扣敵15%HP)",
         "• F 鍵 ：頂帽大炮 (每房2發，200範圍傷)",
         "• M 鍵 ：靜音切換  |  ESC ：返回選角"
@@ -1439,7 +1439,7 @@ function drawHowToPlayScreen() {
         "• A / D ：左右移動",
         "• W / S ：はしご昇降 (S+SPACE 降下)",
         "• SPACE ：ジャンプ",
-        "• マウス照準 + 左クリック ：5連射銃",
+        "• マウス照準 + 左クリック ：6連射銃",
         "• 右クリック ：骨投げ (敵現在HPの15%傷)",
         "• F キー ：シルクハット大砲 (各部屋2発)",
         "• M キー ：消音切替  |  ESC ：キャラ選択"
