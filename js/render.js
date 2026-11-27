@@ -1488,3 +1488,355 @@ function drawHowToPlayScreen() {
       ctrlLines: [
         "• A / D ：左右移動",
         "• W / S ：はしご昇降 (S+SPACE 降下)",
+        "• SPACE ：ジャンプ",
+        `• マウス照準 + 左クリック ：${GUN_BURST_COUNT}連射銃`,
+        "• 右クリック ：骨投げ (敵現在HPの15%傷)",
+        "• F キー ：シルクハット大砲 (各部屋2発)",
+        "• M キー ：消音切替  |  ESC ：キャラ選択"
+      ],
+      tipTitle: "特性とアイテム",
+      tipLines: [
+        "• 難易度別に 1 / 3 / 5 個の特性を選択。移動速度・視界・聴覚・スタミナが変化！",
+        "• 最初の部屋のハット星人を倒すとシルクハット大砲を入手！チキンでHP50回復＆骨+2。"
+      ]
+    }
+  ];
+
+  const colGap = 12;
+  const innerX = panelX + 14;
+  const innerW = panelW - 28;
+  const colW = Math.floor((innerW - colGap * 2) / 3);
+  const colY = panelY + 46;
+  const colH = panelH - 114;
+
+  columns.forEach((col, idx) => {
+    const cx = innerX + idx * (colW + colGap);
+    ctx.fillStyle = "rgba(30, 41, 59, 0.92)";
+    ctx.fillRect(cx, colY, colW, colH);
+    ctx.strokeStyle = col.accent;
+    ctx.lineWidth = 1.8;
+    ctx.strokeRect(cx, colY, colW, colH);
+
+    ctx.fillStyle = "rgba(15, 23, 42, 0.95)";
+    ctx.fillRect(cx, colY, colW, 28);
+    ctx.fillStyle = col.accent;
+    ctx.font = "bold 14px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(col.lang, cx + colW / 2, colY + 19);
+
+    const padX = 10;
+    const textMaxW = colW - padX * 2;
+    let yCursor = colY + 46;
+
+    ctx.textAlign = "left";
+    ctx.fillStyle = col.accent;
+    ctx.font = "bold 12px sans-serif";
+    ctx.fillText(`▸ ${col.goalTitle}`, cx + padX, yCursor);
+    yCursor = drawWrappedGuideLines(col.goalLines, cx + padX, yCursor + 16, textMaxW, 15, "11.5px sans-serif", "#f8fafc");
+
+    yCursor += 8;
+    ctx.fillStyle = col.accent;
+    ctx.font = "bold 12px sans-serif";
+    ctx.fillText(`▸ ${col.ctrlTitle}`, cx + padX, yCursor);
+    yCursor = drawWrappedGuideLines(col.ctrlLines, cx + padX, yCursor + 16, textMaxW, 16, "11.5px sans-serif", "#e2e8f0");
+
+    yCursor += 8;
+    ctx.fillStyle = col.accent;
+    ctx.font = "bold 12px sans-serif";
+    ctx.fillText(`▸ ${col.tipTitle}`, cx + padX, yCursor);
+    drawWrappedGuideLines(col.tipLines, cx + padX, yCursor + 16, textMaxW, 15, "11.5px sans-serif", "#cbd5e1");
+  });
+
+  const backBtnX = panelX + 14;
+  const backBtnY = panelY + panelH - 56;
+  const backBtnW = panelW - 28;
+  const backBtnH = 44;
+
+  ctx.fillStyle = "#16a34a";
+  ctx.fillRect(backBtnX, backBtnY, backBtnW, backBtnH);
+  ctx.strokeStyle = "#86efac";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(backBtnX, backBtnY, backBtnW, backBtnH);
+
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "bold 15px sans-serif";
+  ctx.fillText(
+    "BACK TO CHARACTER SELECT   |   返回角色選擇   |   キャラクター選択へ戻る   [ESC / CLICK]",
+    W / 2,
+    backBtnY + 27
+  );
+  ctx.textAlign = "left";
+
+  setup.uiBoxes.push({
+    x: backBtnX,
+    y: backBtnY,
+    w: backBtnW,
+    h: backBtnH,
+    onClick: () => {
+      setup.showHowToPlay = false;
+      SFX.beep(420, 0.08, "square", 0.07);
+    }
+  });
+}
+
+function drawSelectScreen() {
+  if (typeof drawIntroCrawlScreen === "function" && setup.showIntroScreen !== false) {
+    drawIntroCrawlScreen();
+    return;
+  }
+
+  if (setup.showHowToPlay) {
+    drawHowToPlayScreen();
+    return;
+  }
+
+  setup.uiBoxes.length = 0;
+  drawActiveScreenBackground(STAGE_001_DEFAULT.screens[0]);
+
+  ctx.fillStyle = "rgba(15, 23, 42, 0.90)";
+  ctx.fillRect(28, 16, W - 56, H - 32);
+  ctx.strokeStyle = "#facc15";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(28, 16, W - 56, H - 32);
+
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#facc15";
+  ctx.font = "bold 21px sans-serif";
+  const titleText = "UNBOUND SEEKERS  無界尋寶錄  アンバウンド・シーカーズ";
+  ctx.fillText(titleText, W / 2, 47);
+
+  if (typeof drawGameBadge === "function") {
+    const titleHalfW = ctx.measureText(titleText).width * 0.5;
+    const miniBadgeSize = 42;
+    const badgeOffsetX = titleHalfW + miniBadgeSize * 0.5 + 12;
+    drawGameBadge(HALF_W - badgeOffsetX, 44, miniBadgeSize, 0.96);
+    drawGameBadge(HALF_W + badgeOffsetX, 44, miniBadgeSize, 0.96);
+  }
+
+  ctx.fillStyle = "#cbd5e1";
+  ctx.font = "11px sans-serif";
+  ctx.fillText(
+    `ASDW: Move/移動/移動  |  L-Click: ${GUN_BURST_COUNT}-Burst Gun/連發槍/連射銃  |  R-Click: Bone/骨頭/骨  |  F: Cannon/大炮/大砲  |  [?]: Guide/說明/遊び方`,
+    W / 2,
+    68
+  );
+
+  const diffBtns = [
+    { id: "NORMAL",   label: "NORMAL  普通  ノーマル (1) [N]",         x: 46,  y: 82, w: 286, h: 34 },
+    { id: "HARD",     label: "HARD  困難  ハード (3) [H]",             x: 346, y: 82, w: 286, h: 34 },
+    { id: "ULTIMATE", label: "ULTIMATE  極限  アルティメット (5) [U]", x: 646, y: 82, w: 292, h: 34 }
+  ];
+
+  for (const b of diffBtns) {
+    const active = setup.difficulty === b.id;
+    ctx.fillStyle = active ? (b.id === "ULTIMATE" ? "#c026d3" : "#eab308") : "#1e293b";
+    ctx.fillRect(b.x, b.y, b.w, b.h);
+    ctx.strokeStyle = active ? "#fef08a" : "#64748b";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(b.x, b.y, b.w, b.h);
+
+    ctx.fillStyle = active ? (b.id === "ULTIMATE" ? "#ffffff" : "#0f172a") : "#f8fafc";
+    ctx.font = "bold 12px sans-serif";
+    ctx.fillText(b.label, b.x + b.w / 2, b.y + 21);
+
+    setup.uiBoxes.push({ x: b.x, y: b.y, w: b.w, h: b.h, onClick: () => setDifficulty(b.id) });
+  }
+
+  const cardW = 630;
+  const cardH = 62;
+  const startX = 46;
+  const startY = 130;
+  const gapY = 9;
+
+  TRAIT_ORDER.forEach((traitId, idx) => {
+    const t = traitsConfig.traits[traitId];
+    if (!t) return;
+    const cx = startX;
+    const cy = startY + idx * (cardH + gapY);
+    const isSelected = setup.selected.includes(traitId);
+    const i18n = UI_I18N.traits[traitId] || { ja: "", jaAnchor: t.anchor, jaDesc: "" };
+
+    ctx.fillStyle = isSelected ? "rgba(30, 58, 138, 0.94)" : "rgba(30, 41, 59, 0.9)";
+    ctx.fillRect(cx, cy, cardW, cardH);
+    ctx.strokeStyle = isSelected ? "#facc15" : "#475569";
+    ctx.lineWidth = isSelected ? 2.5 : 1.5;
+    ctx.strokeRect(cx, cy, cardW, cardH);
+
+    ctx.textAlign = "left";
+    ctx.fillStyle = isSelected ? "#facc15" : "#f8fafc";
+    ctx.font = "bold 16px sans-serif";
+    const jaTag = i18n.ja ? ` / ${i18n.ja}` : "";
+    ctx.fillText(`${t.num}. ${t.zhName} / ${t.en}${jaTag} (${t.anchor})`, cx + 14, cy + 25);
+
+    ctx.textAlign = "right";
+    ctx.fillStyle = isSelected ? "#38bdf8" : "#64748b";
+    ctx.font = "bold 11.5px sans-serif";
+    ctx.fillText(
+      isSelected ? "SELECTED 已選 選択中" : `[KEY 鍵 ${t.num}]`,
+      cx + cardW - 14,
+      cy + 24
+    );
+
+    ctx.textAlign = "left";
+    ctx.fillStyle = "#e2e8f0";
+    ctx.font = "11.5px sans-serif";
+    const descLine = i18n.jaDesc ? `${t.desc || ""}  |  ${i18n.jaDesc}` : (t.desc || "");
+    ctx.fillText(descLine, cx + 14, cy + 48);
+
+    setup.uiBoxes.push({ x: cx, y: cy, w: cardW, h: cardH, onClick: () => toggleTraitSelection(traitId) });
+  });
+
+  const prevX = 694;
+  const prevY = 130;
+  const prevW = 244;
+  const prevH = 346;
+
+  ctx.fillStyle = "#f5f1e6";
+  ctx.fillRect(prevX, prevY, prevW, prevH);
+  ctx.strokeStyle = "#facc15";
+  ctx.lineWidth = 2.5;
+  ctx.strokeRect(prevX, prevY, prevW, prevH);
+
+  ctx.strokeStyle = "rgba(130, 145, 165, 0.35)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let ly = prevY + 36; ly < prevY + 260; ly += 22) {
+    ctx.moveTo(prevX + 12, ly);
+    ctx.lineTo(prevX + prevW - 12, ly);
+  }
+  ctx.stroke();
+
+  const previewFloorY = prevY + 252;
+  ctx.fillStyle = "#1e293b";
+  ctx.fillRect(prevX + 16, previewFloorY, prevW - 32, 6);
+
+  ctx.fillStyle = "#0f172a";
+  ctx.fillRect(prevX, prevY, prevW, 26);
+  ctx.fillStyle = "#facc15";
+  ctx.font = "bold 11px sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText("PREVIEW 預覽 プレビュー (2.8x)", prevX + prevW / 2, prevY + 17);
+
+  const nowSec = performance.now() / 1000;
+  const previewStats = computeHunterStats(setup.selected);
+  const previewBob = Math.sin(nowSec * 3.2) * 1.5;
+
+  drawLayeredCharacter(
+    prevX + prevW / 2,
+    previewFloorY + previewBob,
+    2.8,
+    previewStats.active,
+    nowSec,
+    {
+      facing: 1,
+      showPuff: previewStats.active.asthma,
+      selectedOrder: previewStats.selectedOrder,
+      showAimGun: true,
+      localAimAngle: 0.04
+    }
+  );
+
+  const needed = requiredTraitCount();
+  const ready = setup.selected.length === needed;
+  const preview = buildHunterIdentity(setup.selected);
+  const remain = needed - setup.selected.length;
+
+  ctx.fillStyle = "#0f172a";
+  ctx.fillRect(prevX + 8, prevY + 266, prevW - 16, 72);
+  ctx.fillStyle = ready ? "#facc15" : "#94a3b8";
+  ctx.font = "bold 16.5px sans-serif";
+  ctx.fillText(
+    ready ? `${preview.zhName} (${preview.anchors})` : `${preview.zhName} / 探索者`,
+    prevX + prevW / 2,
+    prevY + 290
+  );
+
+  ctx.fillStyle = ready ? "#38bdf8" : "#94a3b8";
+  ctx.font = "bold 11.5px sans-serif";
+  ctx.fillText(
+    ready ? `${preview.enName} [${preview.code}]` : `PICK 選 選択: ${remain} MORE`,
+    prevX + prevW / 2,
+    prevY + 311
+  );
+
+  ctx.fillStyle = "#cbd5e1";
+  ctx.font = "11px sans-serif";
+  ctx.fillText(`SPD 速度:${Math.round(previewStats.walkSpeed)}   HP 生命:${previewStats.maxHp}`, prevX + prevW / 2, prevY + 330);
+
+  const btnX = startX;
+  const btnY = 496;
+  const btnW = cardW;
+  const btnH = 52;
+  ctx.fillStyle = ready ? "#16a34a" : "#334155";
+  ctx.fillRect(btnX, btnY, btnW, btnH);
+  ctx.strokeStyle = ready ? "#86efac" : "#475569";
+  ctx.lineWidth = 2.5;
+  ctx.strokeRect(btnX, btnY, btnW, btnH);
+
+  ctx.fillStyle = ready ? "#ffffff" : "#94a3b8";
+  ctx.font = "bold 16px sans-serif";
+  ctx.fillText(
+    ready
+      ? "START RUN  |  開始尋寶  |  冒険開始   [ENTER]"
+      : `SELECT ${needed} TRAIT(S)  |  請選 ${needed} 項特質  |  特性を ${needed} つ選択`,
+    btnX + btnW / 2,
+    btnY + 32
+  );
+
+  if (ready) {
+    setup.uiBoxes.push({ x: btnX, y: btnY, w: btnW, h: btnH, onClick: () => startStageWithSelectedTraits() });
+  }
+
+  // HOW TO PLAY button (English / 繁體中文 / 日本語)
+  const howX = prevX;
+  const howY = 496;
+  const howW = prevW;
+  const howH = 52;
+
+  ctx.fillStyle = "#1d4ed8";
+  ctx.fillRect(howX, howY, howW, howH);
+  ctx.strokeStyle = "#93c5fd";
+  ctx.lineWidth = 2.2;
+  ctx.strokeRect(howX, howY, howW, howH);
+
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "bold 14px monospace";
+  ctx.fillText("HOW TO PLAY [?]", howX + howW / 2, howY + 22);
+
+  ctx.fillStyle = "#fef08a";
+  ctx.font = "bold 12px sans-serif";
+  ctx.fillText("玩法說明 ・ 遊び方", howX + howW / 2, howY + 41);
+
+  setup.uiBoxes.push({
+    x: howX,
+    y: howY,
+    w: howW,
+    h: howH,
+    onClick: () => {
+      setup.showHowToPlay = true;
+      SFX.beep(540, 0.08, "square", 0.07);
+    }
+  });
+
+  ctx.textAlign = "left";
+}
+
+window.addEventListener("keydown", (e) => {
+  if (typeof game === "undefined" || game.state !== "SELECT" || typeof setup === "undefined") return;
+  if (setup.showIntroScreen !== false) return;
+
+  if (setup.showHowToPlay) {
+    if (["Escape", "Enter", " ", "?", "/", "F1", "t", "T"].includes(e.key)) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      setup.showHowToPlay = false;
+      SFX.beep(420, 0.08, "square", 0.07);
+    }
+  } else if (["?", "F1", "t", "T"].includes(e.key)) {
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    setup.showHowToPlay = true;
+    SFX.beep(540, 0.08, "square", 0.07);
+  }
+}, true);
