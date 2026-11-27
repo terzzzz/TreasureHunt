@@ -256,4 +256,68 @@ const STAGE_001_DEFAULT = {
         { x: 620, y: 310, w: 40, h: 238 }
       ],
       pickups: [
-        { type: "hat",   x:
+        { type: "hat",   x: 625, y: 274, w: 30, h: 24 },
+        { type: "crown", x: 280, y: 384, w: 26, h: 20 }
+      ],
+      enemies: [
+        { kind: "giant", x: 460, y: 448, minX: 360, maxX: 840, hp: 170 }
+      ]
+    },
+    {
+      id: "003",
+      image: "exit.jpg",
+      pageLeft: "30",
+      pageRight: "31",
+      isFinal: true,
+      spawn: { x: 64, y: 492 },
+      exit: { x: 896, y: 430, w: 54, h: 118, dir: "right", label: "VAULT" },
+      solids: [
+        { x: 0,   y: 548, w: 984, h: 73, hatched: true },
+        { x: 0,   y: 0,   w: 24,  h: 548 },
+        { x: 956, y: 0,   w: 28,  h: 430 },
+        { x: 620, y: 400, w: 280, h: 20, hatched: true }
+      ],
+      oneWay: [
+        { x: 360, y: 470, w: 180, h: 12 }
+      ],
+      ladders: [
+        { x: 640, y: 400, w: 40, h: 148 }
+      ],
+      pickups: [
+        { type: "chicken",  x: 160, y: 516, w: 34, h: 28 },
+        { type: "treasure", x: 810, y: 356, w: 42, h: 36 }
+      ],
+      enemies: [
+        { kind: "blade", x: 380, y: 496, minX: 240, maxX: 580, hp: 50 },
+        { kind: "giant", x: 700, y: 300, minX: 685, maxX: 880, hp: 200 }
+      ]
+    }
+  ]
+};
+
+const stageManager = {
+  stageFolder: "./Stages/001",
+  data: STAGE_001_DEFAULT,
+  bgImages: {},
+  bgmAudio: null
+};
+
+async function initTraitsJson() {
+  try {
+    const res = await fetch("./char/traits.json", { cache: "no-store" });
+    if (res.ok) {
+      const json = await res.json();
+      if (json && json.traits) {
+        traitsConfig = {
+          baseHunter: { ...FALLBACK_TRAITS_DATA.baseHunter, ...(json.baseHunter || {}) },
+          traits: { ...FALLBACK_TRAITS_DATA.traits, ...json.traits },
+          roster: { ...FALLBACK_TRAITS_DATA.roster, ...(json.roster || {}) }
+        };
+        const ordered = Object.keys(traitsConfig.traits).sort(
+          (a, b) => Number(traitsConfig.traits[a].num || 99) - Number(traitsConfig.traits[b].num || 99)
+        );
+        if (ordered.length > 0) TRAIT_ORDER = ordered;
+      }
+    }
+  } catch (_) {}
+}
