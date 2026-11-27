@@ -16,6 +16,79 @@ const UI_I18N = {
   }
 };
 
+const _hitFlashBuffer = (() => {
+  const c = document.createElement("canvas");
+  return { canvas: c, ctx: c.getContext("2d") };
+})();
+
+function drawRedFlashSprite(src, dx, dy, dw, dh, alpha = 0.72) {
+  const sw = src.naturalWidth || src.width;
+  const sh = src.naturalHeight || src.height;
+  if (!sw || !sh) return;
+
+  if (_hitFlashBuffer.canvas.width !== sw || _hitFlashBuffer.canvas.height !== sh) {
+    _hitFlashBuffer.canvas.width = sw;
+    _hitFlashBuffer.canvas.height = sh;
+  }
+
+  const tctx = _hitFlashBuffer.ctx;
+  tctx.save();
+  tctx.globalCompositeOperation = "source-over";
+  tctx.clearRect(0, 0, sw, sh);
+  tctx.drawImage(src, 0, 0, sw, sh);
+  tctx.globalCompositeOperation = "source-atop";
+  tctx.fillStyle = `rgba(239, 68, 68, ${alpha})`;
+  tctx.fillRect(0, 0, sw, sh);
+  tctx.restore();
+
+  ctx.drawImage(_hitFlashBuffer.canvas, dx, dy, dw, dh);
+}
+
+function getHeroGunMuzzlePos() {
+  const runBobY = hero.animState === "RUN" ? Math.abs(Math.sin(hero.animTimer)) * -3.5 : 0;
+  const climbBobX = hero.animState === "CLIMB" ? Math.sin(hero.animTimer) * 2.5 : 0;
+  const jumpSquashY = hero.animState === "JUMP" ? -2.5 : 0;
+
+  const shoulderX = hero.x + hero.w * 0.5 + climbBobX + hero.facing * 4;
+  const shoulderY = hero.y + hero.h + runBobY + jumpSquashY - 38.8;
+
+  const rawAngle = hero.aimAngle || 0;
+  const localAimAngle = hero.facing === 1
+    ? rawAngle
+    : Math.atan2(Math.sin(rawAngle), -Math.cos(rawAngle));
+  const clampedLocal = Math.max(-1.25, Math.min(1.25, localAimAngle));
+  const worldGunAngle = hero.facing === 1
+    ? clampedLocal
+    : Math.atan2(Math.sin(clampedLocal), -Math.cos(clampedLocal));
+
+  const barrelLen = 19.5;
+  return {
+    x: shoulderX + Math.cos(worldGunAngle) * barrelLen,
+    y: shoulderY + Math.sin(worldGunAngle) * barrelLen
+  };
+}
+
+function spawnBulletHitSparks(hitX, hitY) {
+  if (typeof game === "undefined" || !Array.isArray(game.particles)) return;
+  const sparkColors = ["#ffffff", "#fef08a", "#facc15", "#fb923c"];
+  for (let i = 0; i < 7; i++) {
+    const angle = (Math.PI * 2 * i) / 7 + (Math.random() - 0.5) * 0.55;
+    const speed = 42 + Math.random() * 82;
+    const life = 0.14 + Math.random() * 0.10;
+    game.particles.push({
+      x: hitX + (Math.random() - 0.5) * 3,
+      y: hitY + (Math.random() - 0.5) * 3,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed - 16,
+      size: i < 2 ? 4.4 : (1.8 + Math.random() * 1.4),
+      color: sparkColors[i % sparkColors.length],
+      life,
+      maxLife: life,
+      sparkle: true
+    });
+  }
+}
+
 function getDeviceDateTimeStrings() {
   const now = new Date();
   const yyyy = now.getFullYear();
@@ -467,16 +540,14 @@ function drawAlienEnemy(e, isDarkDungeon = false) {
     const drawH = e.h;
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(src, -drawW * 0.5, -drawH, drawW, drawH);
-    ctx.imageSmoothingEnabled = true;
-
     if (e.hurtTimer > 0) {
-      ctx.fillStyle = "rgba(56, 189, 248, 0.38)";
-      ctx.fillRect(-e.w * 0.5, -drawH, e.w, drawH);
+      drawRedFlashSprite(src, -drawW * 0.5, -drawH, drawW, drawH, 0.72);
     }
+    ctx.imageSmoothingEnabled = true;
   } else {
-    ctx.fillStyle = "#22c55e";
+    ctx.fillStyle = e.hurtTimer > 0 ? "#ef4444" : "#22c55e";
     ctx.fillRect(-12, -52, 24, 52);
-    ctx.fillStyle = "#475569";
+    ctx.fillStyle = e.hurtTimer > 0 ? "#dc2626" : "#475569";
     ctx.fillRect(-20, -74, 40, 22);
   }
   ctx.restore();
@@ -512,15 +583,13 @@ function drawBladeEnemy(e) {
     const drawH = e.h;
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(src, -drawW * 0.38, -drawH, drawW, drawH);
-    ctx.imageSmoothingEnabled = true;
-
     if (e.hurtTimer > 0) {
-      ctx.fillStyle = "rgba(220, 38, 38, 0.35)";
-      ctx.fillRect(-e.w * 0.45, -drawH, e.w * 0.9, drawH);
+      drawRedFlashSprite(src, -drawW * 0.38, -drawH, drawW, drawH, 0.72);
     }
+    ctx.imageSmoothingEnabled = true;
   } else {
     ctx.strokeStyle = e.hurtTimer > 0 ? "#dc2626" : "#1e293b";
-    ctx.fillStyle = e.hurtTimer > 0 ? "#fecaca" : "#f8fafc";
+    ctx.fillStyle = e.hurtTimer > 0 ? "#ef4444" : "#f8fafc";
     ctx.lineWidth = 2;
     ctx.fillRect(-10, -40, 20, 24);
     ctx.strokeRect(-10, -40, 20, 24);
@@ -582,15 +651,13 @@ function drawKniferEnemy(e) {
     const drawH = e.h;
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(src, -drawW * 0.38, -drawH, drawW, drawH);
-    ctx.imageSmoothingEnabled = true;
-
     if (e.hurtTimer > 0) {
-      ctx.fillStyle = "rgba(220, 38, 38, 0.38)";
-      ctx.fillRect(-e.w * 0.45, -drawH, e.w * 0.9, drawH);
+      drawRedFlashSprite(src, -drawW * 0.38, -drawH, drawW, drawH, 0.72);
     }
+    ctx.imageSmoothingEnabled = true;
   } else {
-    ctx.fillStyle = e.hurtTimer > 0 ? "#fecaca" : "#334155";
-    ctx.strokeStyle = "#0f172a";
+    ctx.fillStyle = e.hurtTimer > 0 ? "#ef4444" : "#334155";
+    ctx.strokeStyle = e.hurtTimer > 0 ? "#dc2626" : "#0f172a";
     ctx.lineWidth = 2;
     ctx.fillRect(-9, -36, 18, 22);
     ctx.strokeRect(-9, -36, 18, 22);
@@ -650,12 +717,10 @@ function drawAxeGiant(g) {
     const drawH = g.h;
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(src, -drawW * 0.40, -drawH, drawW, drawH);
-    ctx.imageSmoothingEnabled = true;
-
     if (g.hurtTimer > 0) {
-      ctx.fillStyle = "rgba(220, 38, 38, 0.35)";
-      ctx.fillRect(-g.w * 0.45, -drawH, g.w * 0.9, drawH);
+      drawRedFlashSprite(src, -drawW * 0.40, -drawH, drawW, drawH, 0.72);
     }
+    ctx.imageSmoothingEnabled = true;
 
     if (g.isBoss) {
       ctx.fillStyle = "#facc15";
@@ -666,7 +731,7 @@ function drawAxeGiant(g) {
     ctx.save();
     ctx.scale(scaleMult, scaleMult);
     ctx.strokeStyle = g.hurtTimer > 0 ? "#dc2626" : (g.isBoss ? "#7f1d1d" : "#1e293b");
-    ctx.fillStyle = g.hurtTimer > 0 ? "#fecaca" : (g.isBoss ? "#fde68a" : "#e2e8f0");
+    ctx.fillStyle = g.hurtTimer > 0 ? "#ef4444" : (g.isBoss ? "#fde68a" : "#e2e8f0");
     ctx.lineWidth = 2.6;
 
     ctx.fillRect(-18, -32, 13, 32);
@@ -1059,11 +1124,21 @@ function drawCannonBallSprite(m) {
 }
 
 function drawProjectilesAndAimMark() {
-  ctx.fillStyle = "#1d4ed8";
   for (const b of game.bullets) {
+    ctx.save();
+    ctx.fillStyle = "#1c120c";
+    ctx.strokeStyle = "#09090b";
+    ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.arc(b.x, b.y, 3.5, 0, Math.PI * 2);
+    ctx.arc(b.x, b.y, 3.2, 0, Math.PI * 2);
     ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = "#5c4033";
+    ctx.beginPath();
+    ctx.arc(b.x - 0.8, b.y - 0.8, 1.1, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
   }
 
   for (const bone of game.bones) {
@@ -1106,9 +1181,25 @@ function drawProjectilesAndAimMark() {
   }
 
   for (const p of game.particles) {
-    ctx.globalAlpha = Math.max(0, p.life / p.maxLife);
-    ctx.fillStyle = p.color;
-    ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+    const alpha = Math.max(0, p.life / p.maxLife);
+    ctx.globalAlpha = alpha;
+    if (p.sparkle) {
+      const r = p.size * (0.45 + 0.55 * alpha);
+      ctx.strokeStyle = p.color;
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.moveTo(p.x - r, p.y);
+      ctx.lineTo(p.x + r, p.y);
+      ctx.moveTo(p.x, p.y - r);
+      ctx.lineTo(p.x, p.y + r);
+      ctx.stroke();
+
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(p.x - 0.8, p.y - 0.8, 1.6, 1.6);
+    } else {
+      ctx.fillStyle = p.color;
+      ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+    }
   }
   ctx.globalAlpha = 1;
 
@@ -1332,7 +1423,6 @@ function drawHUD() {
       H / 2 + 64
     );
 
-    // Interactive trilingual action buttons
     const retryX = W / 2 - 330;
     const retryY = H / 2 + 88;
     const retryW = 310;
@@ -1788,7 +1878,6 @@ function drawSelectScreen() {
     setup.uiBoxes.push({ x: btnX, y: btnY, w: btnW, h: btnH, onClick: () => startStageWithSelectedTraits() });
   }
 
-  // HOW TO PLAY button (English / 繁體中文 / 日本語)
   const howX = prevX;
   const howY = 496;
   const howW = prevW;
