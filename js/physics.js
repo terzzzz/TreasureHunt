@@ -11,6 +11,11 @@ const BULLET_DROP_DIST_MULT = 0.42;  // Starts falling on ground much earlier
 // Normal Player Sight Range (used even when hero.traits.blind is active)
 const NORMAL_PLAYER_VISION_RANGE = 275;
 
+// Enemy Post-Hit Idle Pause Tuning
+const BLADE_POST_HIT_IDLE_SEC = 4.0;
+const KNIFER_POST_HIT_IDLE_SEC = 4.0;
+const GIANT_POST_HIT_IDLE_SEC = 2.0;
+
 // Super Cannon (頂帽大炮) Tuning
 const CANNON_ROUNDS_PER_ROOM = 2;                        // Limited to 2 rounds per room
 const CANNON_DAMAGE = 200;                               // 200 AoE damage
@@ -164,7 +169,7 @@ function scatterTreasureRoomItems(scr) {
 }
 
 function damageHero(amount, knockDir) {
-  if (hero.invulnTimer > 0 || game.state !== "PLAY") return;
+  if (hero.invulnTimer > 0 || game.state !== "PLAY") return false;
   hero.hp = Math.max(0, hero.hp - amount);
   hero.invulnTimer = 1.0;
   hero.onLadder = false;
@@ -179,6 +184,7 @@ function damageHero(amount, knockDir) {
     game.state = "GAMEOVER";
     SFX.syncBgm();
   }
+  return true;
 }
 
 function getActiveCamZoom() {
@@ -942,6 +948,14 @@ function stepEnemies(scr) {
       if (e.slashCooldown > 0) e.slashCooldown = Math.max(0, e.slashCooldown - DT);
       if (e.slashTimer > 0) e.slashTimer = Math.max(0, e.slashTimer - DT);
 
+      if (e.postHitIdleTimer > 0) {
+        e.postHitIdleTimer = Math.max(0, e.postHitIdleTimer - DT);
+        e.alerted = false;
+        e.aggroTimer = 0;
+        snapEnemyToGround(scr, e);
+        continue;
+      }
+
       if (!playerSawEnemy) {
         e.alerted = false;
         e.aggroTimer = 0;
@@ -996,7 +1010,11 @@ function stepEnemies(scr) {
           e.slashTimer = 0.24;
           e.slashCooldown = 0.65;
           SFX.beep(260, 0.08, "sawtooth", 0.07, 140);
-          damageHero(e.atk || Math.round(15 * atkMult), e.facing);
+          if (damageHero(e.atk || Math.round(15 * atkMult), e.facing)) {
+            e.postHitIdleTimer = BLADE_POST_HIT_IDLE_SEC;
+            e.alerted = false;
+            e.aggroTimer = 0;
+          }
         }
       }
       continue;
@@ -1005,6 +1023,18 @@ function stepEnemies(scr) {
     if (e.kind === "knifer") {
       if (e.aggroTimer > 0) e.aggroTimer = Math.max(0, e.aggroTimer - DT);
       if (e.dashCooldown > 0) e.dashCooldown = Math.max(0, e.dashCooldown - DT);
+
+      if (e.postHitIdleTimer > 0) {
+        e.postHitIdleTimer = Math.max(0, e.postHitIdleTimer - DT);
+        e.alerted = false;
+        e.aggroTimer = 0;
+        e.aiState = "IDLE";
+        snapEnemyToGround(scr, e);
+        if (e.postHitIdleTimer === 0) {
+          e.aiState = "PATROL";
+        }
+        continue;
+      }
 
       if (!playerSawEnemy) {
         e.alerted = false;
@@ -1063,7 +1093,14 @@ function stepEnemies(scr) {
         if (sameFloor && !e.struckThisDash && (rectsOverlap(hero, knifeBox) || rectsOverlap(hero, e))) {
           e.struckThisDash = true;
           SFX.beep(240, 0.09, "sawtooth", 0.08, 120);
-          damageHero(e.atk || Math.round(13 * atkMult), dir);
+          if (damageHero(e.atk || Math.round(13 * atkMult), dir)) {
+            e.postHitIdleTimer = KNIFER_POST_HIT_IDLE_SEC;
+            e.aiState = "IDLE";
+            e.alerted = false;
+            e.aggroTimer = 0;
+            snapEnemyToGround(scr, e);
+            continue;
+          }
         }
 
         if (e.aiTimer <= 0) {
@@ -1105,6 +1142,19 @@ function stepEnemies(scr) {
     if (e.kind === "giant") {
       if (e.alertTimer > 0) e.alertTimer = Math.max(0, e.alertTimer - DT);
       if (e.chargeCooldown > 0) e.chargeCooldown = Math.max(0, e.chargeCooldown - DT);
+
+      if (e.postHitIdleTimer > 0) {
+        e.postHitIdleTimer = Math.max(0, e.postHitIdleTimer - DT);
+        e.alerted = false;
+        e.aggroTimer = 0;
+        e.aiState = "IDLE";
+        e.weaponAngle = -0.25;
+        snapEnemyToGround(scr, e);
+        if (e.postHitIdleTimer === 0) {
+          e.aiState = "PATROL";
+        }
+        continue;
+      }
 
       if (!playerSawEnemy) {
         e.alerted = false;
@@ -1190,7 +1240,15 @@ function stepEnemies(scr) {
           };
           if (rectsOverlap(hero, axeBox)) {
             e.struckThisSwing = true;
-            damageHero(e.cleaveAtk || Math.round(24 * atkMult), e.facing);
+            if (damageHero(e.cleaveAtk || Math.round(24 * atkMult), e.facing)) {
+              e.postHitIdleTimer = GIANT_POST_HIT_IDLE_SEC;
+              e.aiState = "IDLE";
+              e.alerted = false;
+              e.aggroTimer = 0;
+              e.weaponAngle = -0.25;
+              snapEnemyToGround(scr, e);
+              continue;
+            }
           }
         }
         if (e.aiTimer <= 0) {
@@ -1235,7 +1293,15 @@ function stepEnemies(scr) {
           };
           if (rectsOverlap(hero, swingBox)) {
             e.struckThisSwing = true;
-            damageHero(e.chargeAtk || Math.round(24 * atkMult), dir);
+            if (damageHero(e.chargeAtk || Math.round(24 * atkMult), dir)) {
+              e.postHitIdleTimer = GIANT_POST_HIT_IDLE_SEC;
+              e.aiState = "IDLE";
+              e.alerted = false;
+              e.aggroTimer = 0;
+              e.weaponAngle = -0.25;
+              snapEnemyToGround(scr, e);
+              continue;
+            }
           }
         }
 
@@ -1255,7 +1321,13 @@ function stepEnemies(scr) {
       snapEnemyToGround(scr, e);
 
       if (rectsOverlap(hero, e)) {
-        damageHero(e.atk || Math.round(24 * atkMult), hero.x < e.x ? -1 : 1);
+        if (damageHero(e.atk || Math.round(24 * atkMult), hero.x < e.x ? -1 : 1)) {
+          e.postHitIdleTimer = GIANT_POST_HIT_IDLE_SEC;
+          e.aiState = "IDLE";
+          e.alerted = false;
+          e.aggroTimer = 0;
+          e.weaponAngle = -0.25;
+        }
       }
     }
   }
