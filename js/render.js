@@ -1,6 +1,21 @@
 // js/render.js //
 "use strict";
 
+const UI_I18N = {
+  traits: {
+    blind:      { ja: "視覚障害", jaAnchor: "視", jaDesc: "視界制限" },
+    deaf:       { ja: "聴覚障害", jaAnchor: "聰", jaDesc: "反応遅延" },
+    tremor:     { ja: "振戦",     jaAnchor: "震", jaDesc: "照準揺れ" },
+    asthma:     { ja: "喘息",     jaAnchor: "喘", jaDesc: "息切れ硬直" },
+    prosthesis: { ja: "義足",     jaAnchor: "義", jaDesc: "移動変化" }
+  },
+  difficulty: {
+    NORMAL:   "NORMAL 普通 ノーマル",
+    HARD:     "HARD 困難 ハード",
+    ULTIMATE: "ULTIMATE 極限 アルティメット"
+  }
+};
+
 function getDeviceDateTimeStrings() {
   const now = new Date();
   const yyyy = now.getFullYear();
@@ -37,12 +52,14 @@ function drawNotebookHeaderOverlay(isDarkDungeon = false) {
   const { dateStr, timeStr } = getDeviceDateTimeStrings();
   const stageTitle = (typeof stageManager !== "undefined" && stageManager.data && stageManager.data.stageName)
     ? String(stageManager.data.stageName).toUpperCase()
-    : "RUIN CAVE";
+    : "RUIN CAVE 遺跡洞窟";
   const floorLabel = game.roomType === "BOSS"
-    ? "BOSS CHAMBER"
+    ? "BOSS CHAMBER 首領殿堂 ボス部屋"
     : (game.roomType === "TREASURE"
-      ? "TREASURE VAULT"
-      : (game.transitions === 0 ? "ENTRY" : `FLOOR ${String(game.transitions).padStart(2, "0")}`));
+      ? "TREASURE VAULT 寶物庫 宝物庫"
+      : (game.transitions === 0
+        ? "ENTRY 入口 入口"
+        : `FLOOR ${String(game.transitions).padStart(2, "0")} 層 階`));
   const roomTag = `${stageTitle} — ${floorLabel}`;
 
   ctx.save();
@@ -55,20 +72,20 @@ function drawNotebookHeaderOverlay(isDarkDungeon = false) {
   }
 
   ctx.fillStyle = isDarkDungeon ? "rgba(226, 232, 240, 0.90)" : "rgba(45, 55, 72, 0.88)";
-  ctx.font = "bold 12px monospace";
+  ctx.font = "bold 11px sans-serif";
 
   ctx.textAlign = "left";
-  ctx.fillText(`DATE: ${dateStr}`, 34, 45);
+  ctx.fillText(`DATE 日付: ${dateStr}`, 34, 45);
 
   ctx.textAlign = "center";
   ctx.fillStyle = isDarkDungeon ? "#facc15" : "#1e293b";
-  ctx.font = "bold 13px monospace";
+  ctx.font = "bold 12px sans-serif";
   ctx.fillText(roomTag, HALF_W, 45);
 
   ctx.textAlign = "right";
   ctx.fillStyle = isDarkDungeon ? "rgba(226, 232, 240, 0.90)" : "rgba(45, 55, 72, 0.88)";
-  ctx.font = "bold 12px monospace";
-  ctx.fillText(`TIME: ${timeStr}`, W - 34, 45);
+  ctx.font = "bold 11px sans-serif";
+  ctx.fillText(`TIME 時刻: ${timeStr}`, W - 34, 45);
   ctx.restore();
 }
 
@@ -76,7 +93,7 @@ function drawActiveScreenBackground(scr) {
   const customBg = resolveScreenBackgroundImage(scr);
   const isDarkDungeon = Boolean(customBg);
 
-  // 1. Always lay down the open cream notebook spread first
+  // 1. Open cream notebook spread
   const grad = ctx.createLinearGradient(0, 0, W, 0);
   grad.addColorStop(0.00, "#ede7d8");
   grad.addColorStop(0.47, "#f7f4eb");
@@ -86,7 +103,7 @@ function drawActiveScreenBackground(scr) {
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, W, H);
 
-  // 2. Blend the dungeon background template semi-transparently across all rooms
+  // 2. Dungeon background template overlay
   if (customBg) {
     ctx.save();
     ctx.globalAlpha = 0.68;
@@ -94,7 +111,6 @@ function drawActiveScreenBackground(scr) {
     ctx.drawImage(customBg, 0, 0, game.worldW, game.worldH);
     ctx.imageSmoothingEnabled = true;
 
-    // Subtle warm torchlight ambience
     const flicker = 0.04 + Math.sin(game.elapsedTime * 7.5) * 0.02;
     ctx.globalAlpha = 1.0;
     ctx.fillStyle = `rgba(251, 146, 60, ${flicker})`;
@@ -102,7 +118,7 @@ function drawActiveScreenBackground(scr) {
     ctx.restore();
   }
 
-  // 3. Retain semi-transparent notebook ruled lines, margin lines, page numbers & spine crease on top
+  // 3. Notebook ruled lines, margin lines & spine crease
   drawRuledPage(0, 0, scr.pageLeft, true, isDarkDungeon);
   drawRuledPage(HALF_W, 0, scr.pageRight, false, isDarkDungeon);
 
@@ -123,7 +139,6 @@ function drawActiveScreenBackground(scr) {
       ctx.fillStyle = s.hatched ? "#1c1917" : "#44403c";
       ctx.fillRect(s.x, s.y, s.w, s.h);
 
-      // Top stone highlight lip so platforms stand out clearly against dark brick walls
       ctx.fillStyle = s.hatched ? "#57534e" : "#a8a29e";
       ctx.fillRect(s.x, s.y, s.w, 3);
 
@@ -131,7 +146,6 @@ function drawActiveScreenBackground(scr) {
       ctx.lineWidth = 2;
       ctx.strokeRect(s.x, s.y, s.w, s.h);
 
-      // Chiseled stone block joints on horizontal ledges
       if (!s.hatched && s.w >= 48) {
         ctx.strokeStyle = "rgba(12, 10, 9, 0.55)";
         ctx.lineWidth = 1.5;
@@ -227,7 +241,6 @@ function drawRuledPage(px, py, pageNum, isLeft, isDarkDungeon = false) {
   const lineGap = 24;
 
   ctx.save();
-  // Semi-transparent horizontal ruled notebook lines
   ctx.strokeStyle = isDarkDungeon ? "rgba(226, 232, 240, 0.22)" : "rgba(130, 145, 165, 0.35)";
   ctx.lineWidth = 1;
   ctx.beginPath();
@@ -237,7 +250,6 @@ function drawRuledPage(px, py, pageNum, isLeft, isDarkDungeon = false) {
   }
   ctx.stroke();
 
-  // Subtle vertical notebook margin rule on the outer page edge
   const marginX = isLeft ? (px + padX + 26) : (px + HALF_W - padX - 26);
   ctx.strokeStyle = isDarkDungeon ? "rgba(248, 113, 113, 0.22)" : "rgba(220, 38, 38, 0.22)";
   ctx.lineWidth = 1;
@@ -268,9 +280,9 @@ function drawSubtleExitMark(scr) {
     ctx.fillRect(exit.x, exit.y, exit.w, exit.h);
     ctx.strokeRect(exit.x, exit.y, exit.w, exit.h);
     ctx.fillStyle = "#f87171";
-    ctx.font = "bold 9px monospace";
+    ctx.font = "bold 9px sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText("LOCKED", exit.x + exit.w / 2, exit.y - 6);
+    ctx.fillText("LOCKED 鎖定 ロック", exit.x + exit.w / 2, exit.y - 6);
     ctx.restore();
     return;
   }
@@ -289,15 +301,15 @@ function drawSubtleExitMark(scr) {
     ctx.strokeRect(exit.x, exit.y, exit.w, exit.h);
 
     ctx.fillStyle = "#1e293b";
-    ctx.fillRect(exit.x - 6, exit.y - 20, exit.w + 12, 17);
+    ctx.fillRect(exit.x - 28, exit.y - 20, exit.w + 56, 17);
     ctx.strokeStyle = "#facc15";
     ctx.lineWidth = 1.5;
-    ctx.strokeRect(exit.x - 6, exit.y - 20, exit.w + 12, 17);
+    ctx.strokeRect(exit.x - 28, exit.y - 20, exit.w + 56, 17);
 
     ctx.fillStyle = "#facc15";
-    ctx.font = "bold 11px monospace";
+    ctx.font = "bold 10px sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText("FINISH", cx, exit.y - 8);
+    ctx.fillText("FINISH 終點 ゴール", cx, exit.y - 8);
 
     ctx.strokeStyle = isDarkDungeon ? `rgba(250, 204, 21, ${pulse})` : `rgba(217, 119, 6, ${pulse})`;
     ctx.lineWidth = 2.4;
@@ -395,9 +407,9 @@ function drawScreenEntities(scr) {
         ctx.fillRect(p.x + 12, p.y + bob, 6, 6);
       }
       ctx.fillStyle = isDarkDungeon ? "#facc15" : "#1e293b";
-      ctx.font = "bold 9px monospace";
+      ctx.font = "bold 9px sans-serif";
       ctx.textAlign = "center";
-      ctx.fillText("頂帽大炮", p.x + p.w * 0.5, p.y - 3 + bob);
+      ctx.fillText("頂帽大炮 / CANNON HAT / 大砲帽", p.x + p.w * 0.5, p.y - 3 + bob);
       ctx.textAlign = "left";
     } else if (p.type === "treasure") {
       const sheetItems = EXTRA_SPRITES.treasureSheet?.items;
@@ -475,14 +487,14 @@ function drawAlienEnemy(e, isDarkDungeon = false) {
   ctx.fillRect(e.x, e.y - 10, e.w * Math.max(0, e.hp / e.maxHp), 4);
 
   ctx.fillStyle = isDarkDungeon ? "#facc15" : "#0f172a";
-  ctx.font = "bold 9px monospace";
+  ctx.font = "bold 9px sans-serif";
   ctx.textAlign = "center";
-  ctx.fillText("頂帽大炮", e.x + e.w / 2, e.y - 14);
+  ctx.fillText("頂帽大炮 / HAT CANNON / 大砲帽", e.x + e.w / 2, e.y - 14);
 
   if (e.cannonWindingUp) {
     ctx.fillStyle = "#f87171";
-    ctx.font = "bold 11px monospace";
-    ctx.fillText("FIRE!", e.x + e.w / 2, e.y - 25);
+    ctx.font = "bold 10px sans-serif";
+    ctx.fillText("FIRE! 開火! 発射!", e.x + e.w / 2, e.y - 25);
   }
   ctx.textAlign = "left";
 }
@@ -539,7 +551,6 @@ function drawKniferEnemy(e) {
   const isWindup = e.aiState === "DASH_WINDUP";
   const hasSprite = typeof EXTRA_SPRITES !== "undefined" && EXTRA_SPRITES.knifer && EXTRA_SPRITES.knifer.loaded;
 
-  // Dash afterimage trail
   if (isDashing && hasSprite) {
     const src = EXTRA_SPRITES.knifer.canvas || EXTRA_SPRITES.knifer.img;
     const drawW = e.w * 1.40;
@@ -578,7 +589,6 @@ function drawKniferEnemy(e) {
       ctx.fillRect(-e.w * 0.45, -drawH, e.w * 0.9, drawH);
     }
   } else {
-    // Fallback low-profile hooded knifer silhouette
     ctx.fillStyle = e.hurtTimer > 0 ? "#fecaca" : "#334155";
     ctx.strokeStyle = "#0f172a";
     ctx.lineWidth = 2;
@@ -589,7 +599,6 @@ function drawKniferEnemy(e) {
     ctx.fill();
     ctx.stroke();
 
-    // Pinching knife blade
     ctx.fillStyle = "#e2e8f0";
     ctx.beginPath();
     ctx.moveTo(8, -28);
@@ -600,7 +609,6 @@ function drawKniferEnemy(e) {
     ctx.stroke();
   }
 
-  // Forward pinching-knife dash glint
   if (isDashing || isWindup) {
     ctx.strokeStyle = isDashing ? "rgba(250, 204, 21, 0.95)" : "rgba(248, 113, 113, 0.85)";
     ctx.lineWidth = 2.5;
@@ -612,7 +620,6 @@ function drawKniferEnemy(e) {
 
   ctx.restore();
 
-  // HP Bar
   ctx.fillStyle = "#1e293b";
   ctx.fillRect(e.x, e.y - 9, e.w, 4);
   ctx.fillStyle = isDashing ? "#facc15" : (e.alerted ? "#f97316" : "#64748b");
@@ -694,9 +701,9 @@ function drawAxeGiant(g) {
 
   if (g.aiState === "CHARGE_WINDUP" || isCharging) {
     ctx.fillStyle = "#dc2626";
-    ctx.font = "bold 11px monospace";
+    ctx.font = "bold 10px sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText("CHARGE!", g.x + g.w / 2, g.y - 18);
+    ctx.fillText("CHARGE! 衝鋒! 突撃!", g.x + g.w / 2, g.y - 18);
     ctx.textAlign = "left";
   } else if (g.alertTimer > 0) {
     ctx.fillStyle = "#facc15";
@@ -988,9 +995,9 @@ function drawHero() {
 
     if (hero.asthmaStun > 0) {
       ctx.fillStyle = "#dc2626";
-      ctx.font = "bold 11px monospace";
+      ctx.font = "bold 10px sans-serif";
       ctx.textAlign = "center";
-      ctx.fillText("GASP!", footX, barY - 4);
+      ctx.fillText("GASP! 喘息! 息切れ!", footX, barY - 4);
       ctx.textAlign = "left";
     }
   }
@@ -1157,70 +1164,72 @@ function drawHUD() {
   ctx.fillRect(0, 0, W, 26);
 
   ctx.fillStyle = "#facc15";
-  ctx.font = "bold 13px sans-serif";
-  ctx.fillText(`${hero.identity.zhName} ${hero.identity.enName} (${hero.identity.anchors})`, 10, 17);
+  ctx.font = "bold 12px sans-serif";
+  ctx.fillText(`${hero.identity.zhName} ${hero.identity.enName} (${hero.identity.anchors})`, 8, 17);
 
-  ctx.font = "bold 13px monospace";
+  ctx.font = "bold 11.5px sans-serif";
   ctx.fillStyle = "#ef4444";
-  ctx.fillText(`HP:`, 236, 17);
+  ctx.fillText(`HP命:`, 220, 17);
   ctx.fillStyle = "#334155";
-  ctx.fillRect(260, 7, 72, 12);
+  ctx.fillRect(256, 7, 58, 12);
   ctx.fillStyle = "#22c55e";
-  ctx.fillRect(260, 7, Math.max(0, hero.hp * 0.72), 12);
+  ctx.fillRect(256, 7, Math.max(0, hero.hp * 0.58), 12);
 
   if (hero.gunReloadTimer > 0) {
     ctx.fillStyle = "#fb923c";
-    ctx.fillText(`GUN:RLD`, 340, 17);
+    ctx.fillText(`GUN銃:RLD裝填`, 322, 17);
   } else {
     ctx.fillStyle = "#38bdf8";
     const roundsLeft = hero.gunBurstRemaining > 0 ? hero.gunBurstRemaining : GUN_BURST_COUNT;
-    ctx.fillText(`GUN:${roundsLeft}/${GUN_BURST_COUNT}`, 340, 17);
+    ctx.fillText(`GUN銃:${roundsLeft}/${GUN_BURST_COUNT}`, 322, 17);
   }
 
   ctx.fillStyle = "#fef08a";
-  ctx.fillText(`BN:${hero.bones}`, 408, 17);
+  ctx.fillText(`BN骨:${hero.bones}`, 414, 17);
 
   if (!hero.hasMissileHat) {
     ctx.fillStyle = "#94a3b8";
-    ctx.fillText(`HAT:--`, 452, 17);
+    ctx.fillText(`HAT帽:--`, 472, 17);
   } else if (hero.hatAmmo > 0) {
     ctx.fillStyle = "#facc15";
-    ctx.fillText(`HAT:${hero.hatAmmo}/${CANNON_ROUNDS_PER_ROOM}`, 452, 17);
+    ctx.fillText(`HAT帽:${hero.hatAmmo}/${CANNON_ROUNDS_PER_ROOM}`, 472, 17);
   } else {
     ctx.fillStyle = "#fb923c";
-    ctx.fillText(`HAT:0/${CANNON_ROUNDS_PER_ROOM}`, 452, 17);
+    ctx.fillText(`HAT帽:0/${CANNON_ROUNDS_PER_ROOM}`, 472, 17);
   }
 
   const atkMult = getCompoundAttackMultiplier(game.transitions);
   ctx.fillStyle = "#38bdf8";
   const stageBadge = game.roomType === "BOSS"
-    ? "BOSS"
-    : (game.roomType === "TREASURE" ? "VAULT" : `RM:${game.transitions}`);
-  ctx.fillText(stageBadge, 522, 17);
+    ? "BOSS首領"
+    : (game.roomType === "TREASURE" ? "VAULT寶庫" : `RM層:${game.transitions}`);
+  ctx.fillText(stageBadge, 548, 17);
 
   ctx.fillStyle = atkMult >= 1.5 ? "#f87171" : "#fbbf24";
-  ctx.fillText(`ATK:x${atkMult.toFixed(2)}`, 578, 17);
+  ctx.fillText(`ATK攻:x${atkMult.toFixed(2)}`, 624, 17);
 
   ctx.fillStyle = "#f8fafc";
-  ctx.fillText(`${game.score.toString().padStart(6, "0")}`, 666, 17);
+  ctx.font = "bold 12px monospace";
+  ctx.fillText(`${game.score.toString().padStart(6, "0")}`, 714, 17);
 
+  ctx.font = "bold 11px sans-serif";
   ctx.fillStyle = "#cbd5e1";
-  ctx.fillText(`[ESC]CHAR`, 734, 17);
+  ctx.fillText(`[ESC]選角/選択`, 772, 17);
   game.hudButtons.push({
-    x: 730, y: 0, w: 82, h: 26,
+    x: 768, y: 0, w: 94, h: 26,
     onClick: () => returnToCharSelect()
   });
 
-  ctx.fillText(`[M]BGM`, 824, 17);
+  ctx.fillText(`[M]BGM音`, 872, 17);
   game.hudButtons.push({
-    x: 820, y: 0, w: 66, h: 26,
+    x: 868, y: 0, w: 72, h: 26,
     onClick: () => { if (typeof SFX.toggleMute === "function") SFX.toggleMute(); }
   });
 
   if (game.roomType === "BOSS" && game.activeScreen) {
     const boss = game.activeScreen.enemies.find(e => e.isBoss && e.alive);
     if (boss) {
-      const bw = 420;
+      const bw = 460;
       const bx = HALF_W - bw / 2;
       const by = 34;
       ctx.fillStyle = "rgba(15, 23, 42, 0.92)";
@@ -1235,15 +1244,15 @@ function drawHUD() {
       ctx.fillRect(bx, by + 10, bw * Math.max(0, boss.hp / boss.maxHp), 8);
 
       ctx.fillStyle = "#facc15";
-      ctx.font = "bold 11px monospace";
+      ctx.font = "bold 11px sans-serif";
       ctx.textAlign = "center";
-      ctx.fillText(`${boss.name}  (${boss.hp}/${boss.maxHp} HP | +${boss.scoreValue} PTS)`, HALF_W, by + 7);
+      ctx.fillText(`BOSS 首領 ボス: ${boss.name}  (${boss.hp}/${boss.maxHp} HP | +${boss.scoreValue} PTS/分/点)`, HALF_W, by + 7);
       ctx.textAlign = "left";
     }
   }
 
   if (game.state === "PLAY" && game.roomType === "RANDOM" && game.transitions >= 10) {
-    const btnW = 248;
+    const btnW = 356;
     const btnH = 32;
     const btnX = W - btnW - 14;
     const btnY = 34;
@@ -1255,10 +1264,12 @@ function drawHUD() {
     ctx.strokeRect(btnX, btnY, btnW, btnH);
 
     ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 12px monospace";
+    ctx.font = "bold 11.5px sans-serif";
     ctx.textAlign = "center";
     ctx.fillText(
-      game.bossArmed ? "[B] BOSS ARMED (NEXT EXIT)" : "[B] FACE BOSS NEXT STAGE",
+      game.bossArmed
+        ? "[B] BOSS ARMED | 首領已鎖定 | ボス戦準備完了"
+        : "[B] FACE BOSS | 挑戰首領 | ボスに挑む",
       btnX + btnW / 2,
       btnY + 20
     );
@@ -1277,49 +1288,88 @@ function drawHUD() {
   }
 
   if (game.state === "GAMEOVER" || game.state === "VICTORY") {
-    ctx.fillStyle = "rgba(15, 23, 42, 0.88)";
+    ctx.fillStyle = "rgba(15, 23, 42, 0.90)";
     ctx.fillRect(0, 0, W, H);
 
     ctx.textAlign = "center";
     ctx.fillStyle = game.state === "VICTORY" ? "#facc15" : "#f87171";
-    ctx.font = "bold 40px monospace";
+    ctx.font = "bold 32px sans-serif";
     ctx.fillText(
-      game.state === "VICTORY" ? "CONGRATZ! — TREASURE CLAIMED!" : "YOU FELL IN THE DEPTHS!",
+      game.state === "VICTORY"
+        ? "CONGRATZ! TREASURE CLAIMED!  |  恭喜成功尋獲秘寶！"
+        : "YOU FELL IN THE DEPTHS!  |  勇者倒於深淵之中！",
       W / 2,
-      H / 2 - 58
+      H / 2 - 84
     );
 
-    ctx.fillStyle = "#38bdf8";
     ctx.font = "bold 22px sans-serif";
     ctx.fillText(
-      `${hero.identity.zhName} — ${hero.identity.enName} (${hero.identity.anchors}) [${setup.difficulty}]`,
+      game.state === "VICTORY"
+        ? "おめでとう！お宝を獲得した！"
+        : "ダンジョンの深淵に倒れた…",
       W / 2,
-      H / 2 - 12
+      H / 2 - 48
+    );
+
+    const diffLabel = UI_I18N.difficulty[setup.difficulty] || setup.difficulty;
+    ctx.fillStyle = "#38bdf8";
+    ctx.font = "bold 18px sans-serif";
+    ctx.fillText(
+      `${hero.identity.zhName} — ${hero.identity.enName} (${hero.identity.anchors})  [${diffLabel}]`,
+      W / 2,
+      H / 2 - 8
     );
 
     ctx.fillStyle = "#facc15";
-    ctx.font = "bold 26px monospace";
-    ctx.fillText(`FINAL SCORE: ${game.score}`, W / 2, H / 2 + 30);
+    ctx.font = "bold 23px sans-serif";
+    ctx.fillText(`FINAL SCORE  最終得分  最終スコア: ${game.score}`, W / 2, H / 2 + 30);
 
     ctx.fillStyle = "#cbd5e1";
-    ctx.font = "15px monospace";
+    ctx.font = "14px sans-serif";
     ctx.fillText(
-      `TRANSITIONS: ${game.transitions}  |  MONSTER ATK: x${atkMult.toFixed(2)}  |  SEED: ${game.runSeed}`,
+      `ROOMS 關卡 階層: ${game.transitions}   |   ENEMY ATK 敵攻: x${atkMult.toFixed(2)}   |   SEED: ${game.runSeed}`,
       W / 2,
       H / 2 + 64
     );
 
-    ctx.fillStyle = "#f8fafc";
-    ctx.font = "bold 16px monospace";
-    ctx.fillText(`[R] NEW RUN  |  [ESC] CHANGE HUNTER`, W / 2, H / 2 + 102);
+    // Interactive trilingual action buttons
+    const retryX = W / 2 - 330;
+    const retryY = H / 2 + 88;
+    const retryW = 310;
+    const retryH = 42;
+
+    ctx.fillStyle = "#16a34a";
+    ctx.fillRect(retryX, retryY, retryW, retryH);
+    ctx.strokeStyle = "#86efac";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(retryX, retryY, retryW, retryH);
+
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "bold 14px sans-serif";
+    ctx.fillText("[R] NEW RUN  重新開始  もう一度", retryX + retryW / 2, retryY + 26);
+
+    const charX = W / 2 + 20;
+    const charY = H / 2 + 88;
+    const charW = 310;
+    const charH = 42;
+
+    ctx.fillStyle = "#1d4ed8";
+    ctx.fillRect(charX, charY, charW, charH);
+    ctx.strokeStyle = "#93c5fd";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(charX, charY, charW, charH);
+
+    ctx.fillStyle = "#ffffff";
+    ctx.fillText("[ESC] SELECT  更換角色  キャラ選択", charX + charW / 2, charY + 26);
+
     ctx.textAlign = "left";
 
     game.hudButtons.push({
-      x: W / 2 - 220, y: H / 2 + 80, w: 200, h: 36,
+      x: retryX, y: retryY, w: retryW, h: retryH,
       onClick: () => startNewRun()
     });
     game.hudButtons.push({
-      x: W / 2 + 20, y: H / 2 + 80, w: 210, h: 36,
+      x: charX, y: charY, w: charW, h: charH,
       onClick: () => returnToCharSelect()
     });
   }
@@ -1393,7 +1443,7 @@ function drawHowToPlayScreen() {
         "• A / D : Move Left / Right",
         "• W / S : Climb Ladder (S+SPACE: Drop)",
         "• SPACE : Jump",
-        "• Mouse + L-Click : 6-Burst Gun",
+        `• Mouse + L-Click : ${GUN_BURST_COUNT}-Burst Gun`,
         "• R-Click : Throw Bone (15% Enemy HP)",
         "• F : Super Cannon (2/Room, 200 AoE)",
         "• M : Mute BGM  |  ESC : Char Select"
@@ -1416,7 +1466,7 @@ function drawHowToPlayScreen() {
         "• A / D ：左右移動",
         "• W / S ：攀爬梯子 (S+空白鍵 下跳)",
         "• 空白鍵 ：跳躍",
-        "• 滑鼠瞄準 + 左鍵 ：6連發機槍",
+        `• 滑鼠瞄準 + 左鍵 ：${GUN_BURST_COUNT}連發機槍`,
         "• 滑鼠右鍵 ：投擲骨頭 (扣敵15%HP)",
         "• F 鍵 ：頂帽大炮 (每房2發，200範圍傷)",
         "• M 鍵 ：靜音切換  |  ESC ：返回選角"
@@ -1438,332 +1488,3 @@ function drawHowToPlayScreen() {
       ctrlLines: [
         "• A / D ：左右移動",
         "• W / S ：はしご昇降 (S+SPACE 降下)",
-        "• SPACE ：ジャンプ",
-        "• マウス照準 + 左クリック ：6連射銃",
-        "• 右クリック ：骨投げ (敵現在HPの15%傷)",
-        "• F キー ：シルクハット大砲 (各部屋2発)",
-        "• M キー ：消音切替  |  ESC ：キャラ選択"
-      ],
-      tipTitle: "特性とアイテム",
-      tipLines: [
-        "• 難易度別に 1 / 3 / 5 個の特性を選択。移動速度・視界・聴覚・スタミナが変化！",
-        "• 最初の部屋のハット星人を倒すとシルクハット大砲を入手！チキンでHP50回復＆骨+2。"
-      ]
-    }
-  ];
-
-  const colGap = 12;
-  const innerX = panelX + 14;
-  const innerW = panelW - 28;
-  const colW = Math.floor((innerW - colGap * 2) / 3);
-  const colY = panelY + 46;
-  const colH = panelH - 114;
-
-  columns.forEach((col, idx) => {
-    const cx = innerX + idx * (colW + colGap);
-    ctx.fillStyle = "rgba(30, 41, 59, 0.92)";
-    ctx.fillRect(cx, colY, colW, colH);
-    ctx.strokeStyle = col.accent;
-    ctx.lineWidth = 1.8;
-    ctx.strokeRect(cx, colY, colW, colH);
-
-    ctx.fillStyle = "rgba(15, 23, 42, 0.95)";
-    ctx.fillRect(cx, colY, colW, 28);
-    ctx.fillStyle = col.accent;
-    ctx.font = "bold 14px sans-serif";
-    ctx.textAlign = "center";
-    ctx.fillText(col.lang, cx + colW / 2, colY + 19);
-
-    const padX = 10;
-    const textMaxW = colW - padX * 2;
-    let yCursor = colY + 46;
-
-    ctx.textAlign = "left";
-    ctx.fillStyle = col.accent;
-    ctx.font = "bold 12px sans-serif";
-    ctx.fillText(`▸ ${col.goalTitle}`, cx + padX, yCursor);
-    yCursor = drawWrappedGuideLines(col.goalLines, cx + padX, yCursor + 16, textMaxW, 15, "11.5px sans-serif", "#f8fafc");
-
-    yCursor += 8;
-    ctx.fillStyle = col.accent;
-    ctx.font = "bold 12px sans-serif";
-    ctx.fillText(`▸ ${col.ctrlTitle}`, cx + padX, yCursor);
-    yCursor = drawWrappedGuideLines(col.ctrlLines, cx + padX, yCursor + 16, textMaxW, 16, "11.5px sans-serif", "#e2e8f0");
-
-    yCursor += 8;
-    ctx.fillStyle = col.accent;
-    ctx.font = "bold 12px sans-serif";
-    ctx.fillText(`▸ ${col.tipTitle}`, cx + padX, yCursor);
-    drawWrappedGuideLines(col.tipLines, cx + padX, yCursor + 16, textMaxW, 15, "11.5px sans-serif", "#cbd5e1");
-  });
-
-  const backBtnX = panelX + 14;
-  const backBtnY = panelY + panelH - 56;
-  const backBtnW = panelW - 28;
-  const backBtnH = 44;
-
-  ctx.fillStyle = "#16a34a";
-  ctx.fillRect(backBtnX, backBtnY, backBtnW, backBtnH);
-  ctx.strokeStyle = "#86efac";
-  ctx.lineWidth = 2;
-  ctx.strokeRect(backBtnX, backBtnY, backBtnW, backBtnH);
-
-  ctx.textAlign = "center";
-  ctx.fillStyle = "#ffffff";
-  ctx.font = "bold 15px sans-serif";
-  ctx.fillText(
-    "BACK TO CHARACTER SELECT   |   返回角色選擇   |   キャラクター選択へ戻る   [ESC / CLICK]",
-    W / 2,
-    backBtnY + 27
-  );
-  ctx.textAlign = "left";
-
-  setup.uiBoxes.push({
-    x: backBtnX,
-    y: backBtnY,
-    w: backBtnW,
-    h: backBtnH,
-    onClick: () => {
-      setup.showHowToPlay = false;
-      SFX.beep(420, 0.08, "square", 0.07);
-    }
-  });
-}
-
-function drawSelectScreen() {
-  if (typeof drawIntroCrawlScreen === "function" && setup.showIntroScreen !== false) {
-    drawIntroCrawlScreen();
-    return;
-  }
-
-  if (setup.showHowToPlay) {
-    drawHowToPlayScreen();
-    return;
-  }
-
-  setup.uiBoxes.length = 0;
-  drawActiveScreenBackground(STAGE_001_DEFAULT.screens[0]);
-
-  ctx.fillStyle = "rgba(15, 23, 42, 0.90)";
-  ctx.fillRect(28, 16, W - 56, H - 32);
-  ctx.strokeStyle = "#facc15";
-  ctx.lineWidth = 2;
-  ctx.strokeRect(28, 16, W - 56, H - 32);
-
-  ctx.textAlign = "center";
-  ctx.fillStyle = "#facc15";
-  ctx.font = "bold 24px monospace";
-  ctx.textAlign = "center";
-  ctx.fillStyle = "#facc15";
-  ctx.font = "bold 24px monospace";
-  const titleText = "UNBOUND SEEKERS  無界尋寶錄  [INFINITE MODE]";
-  ctx.fillText(titleText, W / 2, 48);
-
-  if (typeof drawGameBadge === "function") {
-    const titleHalfW = ctx.measureText(titleText).width * 0.5;
-    const miniBadgeSize = 44;
-    const badgeOffsetX = titleHalfW + miniBadgeSize * 0.5 + 14;
-    drawGameBadge(HALF_W - badgeOffsetX, 45, miniBadgeSize, 0.96);
-    drawGameBadge(HALF_W + badgeOffsetX, 45, miniBadgeSize, 0.96);
-  }
-
-  ctx.fillStyle = "#cbd5e1";
-  ctx.font = "12px monospace";
-  ctx.fillText(`ASDW MOVE/JUMP/LADDER  |  MOUSE AIM + L-CLICK ${GUN_BURST_COUNT}-BURST GUN  |  R-CLICK BONE  |  F CANNON BALL (2/ROOM)  |  [?] HOW TO PLAY`, W / 2, 68);
-
-  const diffBtns = [
-    { id: "NORMAL",   label: "NORMAL (1) [N]",   x: W / 2 - 345, y: 82, w: 216, h: 34 },
-    { id: "HARD",     label: "HARD (3) [H]",     x: W / 2 - 108, y: 82, w: 216, h: 34 },
-    { id: "ULTIMATE", label: "ULTIMATE (5) [U]", x: W / 2 + 129, y: 82, w: 216, h: 34 }
-  ];
-
-  for (const b of diffBtns) {
-    const active = setup.difficulty === b.id;
-    ctx.fillStyle = active ? (b.id === "ULTIMATE" ? "#c026d3" : "#eab308") : "#1e293b";
-    ctx.fillRect(b.x, b.y, b.w, b.h);
-    ctx.strokeStyle = active ? "#fef08a" : "#64748b";
-    ctx.lineWidth = 2;
-    ctx.strokeRect(b.x, b.y, b.w, b.h);
-
-    ctx.fillStyle = active ? (b.id === "ULTIMATE" ? "#ffffff" : "#0f172a") : "#f8fafc";
-    ctx.font = "bold 14px monospace";
-    ctx.fillText(b.label, b.x + b.w / 2, b.y + 22);
-
-    setup.uiBoxes.push({ x: b.x, y: b.y, w: b.w, h: b.h, onClick: () => setDifficulty(b.id) });
-  }
-
-  const cardW = 630;
-  const cardH = 62;
-  const startX = 46;
-  const startY = 130;
-  const gapY = 9;
-
-  TRAIT_ORDER.forEach((traitId, idx) => {
-    const t = traitsConfig.traits[traitId];
-    if (!t) return;
-    const cx = startX;
-    const cy = startY + idx * (cardH + gapY);
-    const isSelected = setup.selected.includes(traitId);
-
-    ctx.fillStyle = isSelected ? "rgba(30, 58, 138, 0.94)" : "rgba(30, 41, 59, 0.9)";
-    ctx.fillRect(cx, cy, cardW, cardH);
-    ctx.strokeStyle = isSelected ? "#facc15" : "#475569";
-    ctx.lineWidth = isSelected ? 2.5 : 1.5;
-    ctx.strokeRect(cx, cy, cardW, cardH);
-
-    ctx.textAlign = "left";
-    ctx.fillStyle = isSelected ? "#facc15" : "#f8fafc";
-    ctx.font = "bold 17px sans-serif";
-    ctx.fillText(`${t.num}. ${t.en}  ${t.zhName} (${t.anchor})`, cx + 14, cy + 25);
-
-    ctx.textAlign = "right";
-    ctx.fillStyle = isSelected ? "#38bdf8" : "#64748b";
-    ctx.font = "bold 13px monospace";
-    ctx.fillText(isSelected ? "SELECTED" : `[KEY ${t.num}]`, cx + cardW - 14, cy + 24);
-
-    ctx.textAlign = "left";
-    ctx.fillStyle = "#e2e8f0";
-    ctx.font = "12px monospace";
-    ctx.fillText(t.desc || "", cx + 14, cy + 48);
-
-    setup.uiBoxes.push({ x: cx, y: cy, w: cardW, h: cardH, onClick: () => toggleTraitSelection(traitId) });
-  });
-
-  const prevX = 694;
-  const prevY = 130;
-  const prevW = 244;
-  const prevH = 346;
-
-  ctx.fillStyle = "#f5f1e6";
-  ctx.fillRect(prevX, prevY, prevW, prevH);
-  ctx.strokeStyle = "#facc15";
-  ctx.lineWidth = 2.5;
-  ctx.strokeRect(prevX, prevY, prevW, prevH);
-
-  ctx.strokeStyle = "rgba(130, 145, 165, 0.35)";
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  for (let ly = prevY + 36; ly < prevY + 260; ly += 22) {
-    ctx.moveTo(prevX + 12, ly);
-    ctx.lineTo(prevX + prevW - 12, ly);
-  }
-  ctx.stroke();
-
-  const previewFloorY = prevY + 252;
-  ctx.fillStyle = "#1e293b";
-  ctx.fillRect(prevX + 16, previewFloorY, prevW - 32, 6);
-
-  ctx.fillStyle = "#0f172a";
-  ctx.fillRect(prevX, prevY, prevW, 26);
-  ctx.fillStyle = "#facc15";
-  ctx.font = "bold 12px monospace";
-  ctx.textAlign = "center";
-  ctx.fillText("HUNTER PREVIEW (2.8x)", prevX + prevW / 2, prevY + 17);
-
-  const nowSec = performance.now() / 1000;
-  const previewStats = computeHunterStats(setup.selected);
-  const previewBob = Math.sin(nowSec * 3.2) * 1.5;
-
-  drawLayeredCharacter(
-    prevX + prevW / 2,
-    previewFloorY + previewBob,
-    2.8,
-    previewStats.active,
-    nowSec,
-    {
-      facing: 1,
-      showPuff: previewStats.active.asthma,
-      selectedOrder: previewStats.selectedOrder,
-      showAimGun: true,
-      localAimAngle: 0.04
-    }
-  );
-
-  const needed = requiredTraitCount();
-  const ready = setup.selected.length === needed;
-  const preview = buildHunterIdentity(setup.selected);
-
-  ctx.fillStyle = "#0f172a";
-  ctx.fillRect(prevX + 8, prevY + 266, prevW - 16, 72);
-  ctx.fillStyle = ready ? "#facc15" : "#94a3b8";
-  ctx.font = "bold 18px sans-serif";
-  ctx.fillText(ready ? `${preview.zhName} (${preview.anchors})` : preview.zhName, prevX + prevW / 2, prevY + 291);
-
-  ctx.fillStyle = ready ? "#38bdf8" : "#64748b";
-  ctx.font = "bold 13px monospace";
-  ctx.fillText(ready ? `${preview.enName} [${preview.code}]` : `PICK ${needed - setup.selected.length} MORE`, prevX + prevW / 2, prevY + 312);
-
-  ctx.fillStyle = "#cbd5e1";
-  ctx.font = "11px monospace";
-  ctx.fillText(`SPD:${Math.round(previewStats.walkSpeed)}  HP:${previewStats.maxHp}`, prevX + prevW / 2, prevY + 330);
-
-  const btnX = startX;
-  const btnY = 496;
-  const btnW = cardW;
-  const btnH = 52;
-  ctx.fillStyle = ready ? "#16a34a" : "#334155";
-  ctx.fillRect(btnX, btnY, btnW, btnH);
-  ctx.strokeStyle = ready ? "#86efac" : "#475569";
-  ctx.lineWidth = 2.5;
-  ctx.strokeRect(btnX, btnY, btnW, btnH);
-
-  ctx.fillStyle = ready ? "#ffffff" : "#94a3b8";
-  ctx.font = "bold 18px monospace";
-  ctx.fillText(ready ? "START INFINITE RUN [ENTER]" : `SELECT ${needed} TRAIT(S) TO START`, btnX + btnW / 2, btnY + 32);
-
-  if (ready) {
-    setup.uiBoxes.push({ x: btnX, y: btnY, w: btnW, h: btnH, onClick: () => startStageWithSelectedTraits() });
-  }
-
-  // HOW TO PLAY button (English / 繁體中文 / 日本語) aligned under Hunter Preview
-  const howX = prevX;
-  const howY = 496;
-  const howW = prevW;
-  const howH = 52;
-
-  ctx.fillStyle = "#1d4ed8";
-  ctx.fillRect(howX, howY, howW, howH);
-  ctx.strokeStyle = "#93c5fd";
-  ctx.lineWidth = 2.2;
-  ctx.strokeRect(howX, howY, howW, howH);
-
-  ctx.fillStyle = "#ffffff";
-  ctx.font = "bold 14px monospace";
-  ctx.fillText("HOW TO PLAY [?]", howX + howW / 2, howY + 22);
-
-  ctx.fillStyle = "#fef08a";
-  ctx.font = "bold 12px sans-serif";
-  ctx.fillText("玩法說明 ・ 遊び方", howX + howW / 2, howY + 41);
-
-  setup.uiBoxes.push({
-    x: howX,
-    y: howY,
-    w: howW,
-    h: howH,
-    onClick: () => {
-      setup.showHowToPlay = true;
-      SFX.beep(540, 0.08, "square", 0.07);
-    }
-  });
-
-  ctx.textAlign = "left";
-}
-
-window.addEventListener("keydown", (e) => {
-  if (typeof game === "undefined" || game.state !== "SELECT" || typeof setup === "undefined") return;
-  if (setup.showIntroScreen !== false) return;
-
-  if (setup.showHowToPlay) {
-    if (["Escape", "Enter", " ", "?", "/", "F1", "t", "T"].includes(e.key)) {
-      e.preventDefault();
-      e.stopImmediatePropagation();
-      setup.showHowToPlay = false;
-      SFX.beep(420, 0.08, "square", 0.07);
-    }
-  } else if (["?", "F1", "t", "T"].includes(e.key)) {
-    e.preventDefault();
-    e.stopImmediatePropagation();
-    setup.showHowToPlay = true;
-    SFX.beep(540, 0.08, "square", 0.07);
-  }
-}, true);
