@@ -760,30 +760,30 @@ function drawAimingGunArm(localAimAngle, hasGunRecoil, isTremor) {
   const jitter = isTremor ? Math.sin(game.elapsedTime * 55) * 0.06 : 0;
 
   ctx.save();
-  ctx.translate(3, -34);
+  ctx.translate(4, -38.5);
   ctx.rotate(clampedAngle + jitter);
 
   const recoilX = hasGunRecoil ? -2.5 : 0;
 
   ctx.strokeStyle = "#1e293b";
-  ctx.lineWidth = isTremor ? 2.0 : 3.0;
+  ctx.lineWidth = isTremor ? 2.0 : 2.8;
   ctx.lineCap = "round";
   ctx.beginPath();
   ctx.moveTo(0, 0);
-  ctx.lineTo(10 + recoilX, 0);
+  ctx.lineTo(7 + recoilX, 0);
   ctx.stroke();
 
   ctx.fillStyle = "#0f172a";
-  ctx.fillRect(9 + recoilX, -2.5, 11, 3.6);
-  ctx.fillRect(8 + recoilX, 0, 3.5, 5.5);
+  ctx.fillRect(6 + recoilX, -2.0, 13, 3.4);
+  ctx.fillRect(7 + recoilX, 1.0, 3.2, 4.2);
 
   if (hasGunRecoil) {
     ctx.fillStyle = "#facc15";
     ctx.beginPath();
-    ctx.moveTo(21 + recoilX, -1);
-    ctx.lineTo(27 + recoilX, -4);
-    ctx.lineTo(25 + recoilX, 0);
-    ctx.lineTo(28 + recoilX, 3);
+    ctx.moveTo(20 + recoilX, -1.0);
+    ctx.lineTo(26 + recoilX, -3.8);
+    ctx.lineTo(24 + recoilX, -0.3);
+    ctx.lineTo(27 + recoilX, 2.6);
     ctx.closePath();
     ctx.fill();
   }
@@ -1647,7 +1647,7 @@ function drawSelectScreen() {
   const previewStats = computeHunterStats(setup.selected);
   const previewBob = Math.sin(nowSec * 3.2) * 1.5;
 
-  drawLayeredCharacter(
+drawLayeredCharacter(
     prevX + prevW / 2,
     previewFloorY + previewBob,
     2.8,
@@ -1658,7 +1658,7 @@ function drawSelectScreen() {
       showPuff: previewStats.active.asthma,
       selectedOrder: previewStats.selectedOrder,
       showAimGun: true,
-      localAimAngle: -0.15
+      localAimAngle: 0.04
     }
   );
 
