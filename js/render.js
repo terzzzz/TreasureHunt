@@ -782,6 +782,8 @@ function drawAxeGiant(g) {
 function drawSpriteLayer(layer, dx, dy, dw, dh, clipZone = null) {
   if (!layer || !layer.loaded) return false;
   const src = layer.canvas || layer.img;
+  const prevSmooth = ctx.imageSmoothingEnabled;
+  ctx.imageSmoothingEnabled = false;
   if (clipZone) {
     const [rx, ry, rw, rh] = clipZone;
     ctx.save();
@@ -793,12 +795,13 @@ function drawSpriteLayer(layer, dx, dy, dw, dh, clipZone = null) {
   } else {
     ctx.drawImage(src, dx, dy, dw, dh);
   }
+  ctx.imageSmoothingEnabled = prevSmooth;
   return true;
 }
 
 function drawAnimatedSpriteLegs(legLayer, spriteW, spriteH, animState, animTimer) {
   const src = legLayer.canvas || legLayer.img;
-  const legTopRatio = 0.68;
+  const legTopRatio = 0.66;
   const legY = -spriteH * (1 - legTopRatio);
   const legH = spriteH * (1 - legTopRatio);
 
@@ -811,6 +814,9 @@ function drawAnimatedSpriteLegs(legLayer, spriteW, spriteH, animState, animTimer
   const strideX = phase * 5.5;
   const liftLeft = animState === "JUMP" ? -2.5 : Math.max(0, -phase) * -3.5;
   const liftRight = animState === "JUMP" ? -1.0 : Math.max(0, phase) * -3.5;
+
+  const prevSmooth = ctx.imageSmoothingEnabled;
+  ctx.imageSmoothingEnabled = false;
 
   ctx.save();
   ctx.beginPath();
@@ -825,6 +831,8 @@ function drawAnimatedSpriteLegs(legLayer, spriteW, spriteH, animState, animTimer
   ctx.clip();
   ctx.drawImage(src, -spriteW / 2 - strideX, -spriteH + liftRight, spriteW, spriteH);
   ctx.restore();
+
+  ctx.imageSmoothingEnabled = prevSmooth;
 }
 
 function drawAimingGunArm(localAimAngle, hasGunRecoil, isTremor) {
@@ -903,7 +911,7 @@ function drawLayeredCharacter(footX, footY, scaleFactor, activeTraits, timeSec, 
 
   const hasBaseSprite = CHAR_LAYERS.base.loaded;
   if (hasBaseSprite) {
-    drawSpriteLayer(CHAR_LAYERS.base, -spriteW / 2, -spriteH, spriteW, spriteH, [0, 0.40, 1, 0.28]);
+    drawSpriteLayer(CHAR_LAYERS.base, -spriteW / 2, -spriteH, spriteW, spriteH, [0, 0.37, 1, 0.34]);
 
     const legLayer = (activeTraits.prosthesis && CHAR_LAYERS.prosthesis.loaded)
       ? CHAR_LAYERS.prosthesis
@@ -924,7 +932,7 @@ function drawLayeredCharacter(footX, footY, scaleFactor, activeTraits, timeSec, 
     ctx.rotate(headAngle);
     ctx.translate(0, 40);
 
-    drawSpriteLayer(CHAR_LAYERS.base, -spriteW / 2, -spriteH, spriteW, spriteH, [0, 0, 1, 0.40]);
+    drawSpriteLayer(CHAR_LAYERS.base, -spriteW / 2, -spriteH, spriteW, spriteH, [0, 0, 1, 0.415]);
     for (const traitId of orderList) {
       if (!activeTraits[traitId] || (traitId !== "blind" && traitId !== "deaf")) continue;
       const layer = CHAR_LAYERS[traitId];
@@ -1823,7 +1831,7 @@ function drawSelectScreen() {
       showPuff: previewStats.active.asthma,
       selectedOrder: previewStats.selectedOrder,
       showAimGun: true,
-      localAimAngle: 0.04
+      localAimAngle: 0
     }
   );
 
