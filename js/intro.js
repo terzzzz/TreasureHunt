@@ -1,6 +1,92 @@
 // js/intro.js //
 "use strict";
 
+const GAME_BADGE_SPRITE = (() => {
+  const entry = { img: new Image(), canvas: null, loaded: false };
+  entry.img.onload = () => {
+    const w = entry.img.naturalWidth || entry.img.width;
+    const h = entry.img.naturalHeight || entry.img.height;
+    if (!w || !h) return;
+
+    // Crop tightly around the circular medallion (79.5% of image height)
+    const cropSize = Math.round(Math.min(w, h) * 0.795);
+    const sx = Math.round((w - cropSize) * 0.5);
+    const sy = Math.round((h - cropSize) * 0.5);
+
+    const off = document.createElement("canvas");
+    off.width = cropSize;
+    off.height = cropSize;
+    const octx = off.getContext("2d");
+    octx.drawImage(entry.img, sx, sy, cropSize, cropSize, 0, 0, cropSize, cropSize);
+
+    // Strip any remaining light-gray/white corner pixels outside the medallion rim
+    try {
+      const imgData = octx.getImageData(0, 0, cropSize, cropSize);
+      const data = imgData.data;
+      const visited = new Uint8Array(cropSize * cropSize);
+      const stack = [];
+
+      const isOuterLight = (idx) => {
+        const p = idx * 4;
+        const r = data[p], g = data[p + 1], b = data[p + 2];
+        return r > 210 && g > 210 && b > 210 && Math.abs(r - b) < 22;
+      };
+
+      const pushIfLight = (x, y) => {
+        if (x < 0 || x >= cropSize || y < 0 || y >= cropSize) return;
+        const idx = y * cropSize + x;
+        if (!visited[idx] && isOuterLight(idx)) {
+          visited[idx] = 1;
+          stack.push(idx);
+        }
+      };
+
+      for (let x = 0; x < cropSize; x++) {
+        pushIfLight(x, 0);
+        pushIfLight(x, cropSize - 1);
+      }
+      for (let y = 0; y < cropSize; y++) {
+        pushIfLight(0, y);
+        pushIfLight(cropSize - 1, y);
+      }
+
+      while (stack.length > 0) {
+        const idx = stack.pop();
+        data[idx * 4 + 3] = 0;
+        const x = idx % cropSize;
+        const y = (idx - x) / cropSize;
+        pushIfLight(x - 1, y);
+        pushIfLight(x + 1, y);
+        pushIfLight(x, y - 1);
+        pushIfLight(x, y + 1);
+      }
+      octx.putImageData(imgData, 0, 0);
+    } catch (_) {
+      // Fallback for file:// local browsing where getImageData is restricted
+    }
+
+    entry.canvas = off;
+    entry.loaded = true;
+  };
+  entry.img.src = "./badge2.jpeg";
+  return entry;
+})();
+
+function drawGameBadge(cx, cy, diameter, alpha = 1.0) {
+  if (!GAME_BADGE_SPRITE.loaded) return false;
+  const src = GAME_BADGE_SPRITE.canvas || GAME_BADGE_SPRITE.img;
+  const r = diameter * 0.5;
+
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.clip();
+  ctx.drawImage(src, cx - r, cy - r, diameter, diameter);
+  ctx.restore();
+  return true;
+}
+
 const INTRO_CRAWL_LINES = [
   {
     text: "話說一個人若無夢想，",
@@ -89,14 +175,19 @@ function drawIntroCrawlScreen() {
     introCrawlState.completed = true;
   }
 
-  // Dark theatrical backdrop with subtle vignette and gold border
+  // Dark theatrical backdrop
   ctx.save();
   ctx.fillStyle = "rgba(10, 15, 28, 0.88)";
   ctx.fillRect(0, 0, W, H);
 
-  const vignette = ctx.createRadialGradient(HALF_W, H * 0.48, 90, HALF_W, H * 0.48, W * 0.62);
+  // Dull background badge emblem
+  const badgeFade = Math.min(1, elapsed / 1.1);
+  const badgePulse = 0.21 + 0.025 * Math.sin(now * 2.0);
+  drawGameBadge(HALF_W, H * 0.48, 455, badgeFade * badgePulse);
+
+  const vignette = ctx.createRadialGradient(HALF_W, H * 0.48, 120, HALF_W, H * 0.48, W * 0.62);
   vignette.addColorStop(0, "rgba(15, 23, 42, 0.0)");
-  vignette.addColorStop(1, "rgba(2, 6, 23, 0.65)");
+  vignette.addColorStop(1, "rgba(2, 6, 23, 0.62)");
   ctx.fillStyle = vignette;
   ctx.fillRect(0, 0, W, H);
 
@@ -127,8 +218,8 @@ function drawIntroCrawlScreen() {
     ctx.save();
     ctx.globalAlpha = ease;
     ctx.font = item.font;
-    ctx.shadowColor = "rgba(0, 0, 0, 0.85)";
-    ctx.shadowBlur = 10;
+    ctx.shadowColor = "rgba(0, 0, 0, 0.92)";
+    ctx.shadowBlur = 12;
     ctx.shadowOffsetY = 3;
     ctx.fillStyle = item.color;
     ctx.fillText(item.text, HALF_W, H * item.yRatio + riseOffset);
