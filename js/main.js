@@ -67,6 +67,58 @@ function buildStartingScreen() {
   };
 }
 
+function getCurrentContextBoardKey() {
+  if (typeof resolveBoardKeyFromTraits !== "function") return "E_BLIND";
+  if (game.state === "SELECT" && typeof setup !== "undefined" && Array.isArray(setup.selected)) {
+    const tempTraits = {};
+    for (const t of setup.selected) tempTraits[t] = true;
+    return resolveBoardKeyFromTraits(tempTraits) || "E_BLIND";
+  }
+  return resolveBoardKeyFromTraits(hero.traits) || "E_BLIND";
+}
+
+function openGlobalScoreboardBrowser() {
+  if (typeof ScoreboardUI === "undefined") return;
+  if (typeof SFX !== "undefined" && typeof SFX.beep === "function") {
+    SFX.beep(580, 0.08, "triangle", 0.07);
+  }
+  ScoreboardUI.openBrowser(getCurrentContextBoardKey());
+}
+
+function drawScoreboardShortcutButton(targetList, x, y, w, h) {
+  if (typeof ScoreboardUI === "undefined") return;
+
+  ctx.save();
+  ctx.fillStyle = "#0f172a";
+  ctx.strokeStyle = "#facc15";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  if (typeof ctx.roundRect === "function") {
+    ctx.roundRect(x, y, w, h, 4);
+  } else {
+    ctx.rect(x, y, w, h);
+  }
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = "#facc15";
+  ctx.font = 'bold 12px "Courier New", monospace';
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("RANKING [L]", x + w * 0.5, y + h * 0.5 + 0.5);
+  ctx.restore();
+
+  if (Array.isArray(targetList)) {
+    targetList.push({
+      x,
+      y,
+      w,
+      h,
+      onClick: () => openGlobalScoreboardBrowser()
+    });
+  }
+}
+
 function startNewRun() {
   game.runSeed = (Date.now() ^ Math.floor(Math.random() * 0xFFFFFFFF)) >>> 0;
   game.transitions = 0;
@@ -79,10 +131,11 @@ function startNewRun() {
   game.victoryWalkTimer = 0;
   game.bossArmed = false;
   game.bossDefeated = false;
+  game.scoreboardOpenedThisRun = false;
 
   inputDelayBuffer.length = 0;
   prevEffectiveInput = {
-    left: false, right: false, up: false, down: false,
+    aHeld: false, dHeld: false, wHeld: false, sHeld: false,
     jumpHeld: false, gunHeld: false, boneHeld: false, hatHeld: false
   };
 
@@ -174,6 +227,7 @@ function returnToCharSelect() {
   game.victoryWalkTimer = 0;
   game.bossArmed = false;
   game.bossDefeated = false;
+  game.scoreboardOpenedThisRun = false;
 
   game.bullets.length = 0;
   game.bones.length = 0;
@@ -191,6 +245,7 @@ function returnToCharSelect() {
 
 // Desktop HUD button clicks ([B] Boss toggle, [ESC] Char, [M] BGM, End-screen buttons)
 canvas.addEventListener("mousedown", (e) => {
+  if (typeof ScoreboardUI !== "undefined" && ScoreboardUI.isOpen()) return;
   if (e.button !== 0 || game.state === "SELECT") return;
   const rect = canvas.getBoundingClientRect();
   const cx = ((e.clientX - rect.left) / rect.width) * W;
@@ -206,13 +261,18 @@ canvas.addEventListener("mousedown", (e) => {
   }
 }, true);
 
-// Keyboard shortcuts for Boss toggle ([B]) and Quick Retry ([R])
+// Keyboard shortcuts for Boss toggle ([B]), Quick Retry ([R]), and Global Ranking ([L])
 window.addEventListener("keydown", (e) => {
+  if (typeof ScoreboardUI !== "undefined" && ScoreboardUI.isOpen()) return;
+
   if (e.code === "KeyB" && game.state === "PLAY" && game.roomType === "RANDOM" && game.transitions >= 10) {
     game.bossArmed = !game.bossArmed;
     SFX.beep(game.bossArmed ? 560 : 320, 0.12, "square", 0.08);
   } else if (e.code === "KeyR" && (game.state === "GAMEOVER" || game.state === "VICTORY")) {
     startNewRun();
+  } else if (e.code === "KeyL" && (game.state === "SELECT" || game.state === "GAMEOVER" || game.state === "VICTORY")) {
+    if (game.state === "SELECT" && setup.showIntroScreen !== false) return;
+    openGlobalScoreboardBrowser();
   }
 });
 
@@ -244,6 +304,10 @@ function updateTick() {
 
     if (game.victoryWalkTimer <= 0 || hero.x > game.worldW + 40) {
       game.state = "VICTORY";
+      if (typeof ScoreboardUI !== "undefined" && !game.scoreboardOpenedThisRun) {
+        game.scoreboardOpenedThisRun = true;
+        ScoreboardUI.openVictorySubmit(game, hero);
+      }
     }
     return;
   }
@@ -267,6 +331,9 @@ function updateTick() {
 function renderFrame() {
   if (game.state === "SELECT") {
     drawSelectScreen();
+    if (typeof setup !== "undefined" && setup.showIntroScreen === false) {
+      drawScoreboardShortcutButton(setup.uiBoxes, W - 128, 12, 110, 26);
+    }
     return;
   }
 
@@ -299,6 +366,9 @@ function renderFrame() {
   }
 
   drawHUD();
+  if (game.state === "VICTORY" || game.state === "GAMEOVER") {
+    drawScoreboardShortcutButton(game.hudButtons, W - 128, 44, 110, 26);
+  }
   if (typeof drawTouchControls === "function") {
     drawTouchControls();
   }
