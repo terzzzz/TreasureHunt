@@ -1,7 +1,7 @@
 // js/scoreboard.js — UNBOUND SEEKERS Global Scoreboard (16 Boards × Top 5,000, Auto-Scaled)
 "use strict";
 
-const SCOREBOARD_API_URL = "https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec";
+const SCOREBOARD_API_URL = "https://script.google.com/macros/s/AKfycbyWETo6Kn9b__EvAXFPUHGQAMDSGQw92SZiL4zNOlJQL0jNb0MCUqh9RIrYaph3Axdt/exec";
 const PAGE_CHUNK_SIZE = 30;
 const CARD_BASE_W = 880;
 const CARD_BASE_H = 550;
