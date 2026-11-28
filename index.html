@@ -42,6 +42,16 @@
       background: #f5f1e6;
       cursor: crosshair;
     }
+    /* Allow iOS/Android text input & touch scrolling inside the scoreboard modal */
+    #ub-sb-overlay, #ub-sb-overlay * {
+      user-select: auto;
+      -webkit-user-select: auto;
+      -webkit-touch-callout: default;
+    }
+    #ub-sb-scroll {
+      touch-action: pan-y;
+      -webkit-overflow-scrolling: touch;
+    }
   </style>
 </head>
 <body>
@@ -100,6 +110,7 @@
       }
     })();
   </script>
+  <script src="js/scoreboard.js"></script>
   <script src="js/assets.js"></script>
   <script src="js/procgen.js"></script>
   <script src="js/input.js"></script>
