@@ -19,12 +19,14 @@ let prevEffectiveInput = {
 window.addEventListener("contextmenu", e => e.preventDefault());
 
 window.addEventListener("mousemove", e => {
+  if (typeof ScoreboardUI !== "undefined" && ScoreboardUI.isOpen()) return;
   const rect = canvas.getBoundingClientRect();
   mouse.screenX = Math.max(0, Math.min(W, ((e.clientX - rect.left) / rect.width) * W));
   mouse.screenY = Math.max(0, Math.min(H, ((e.clientY - rect.top) / rect.height) * H));
 });
 
 window.addEventListener("mousedown", e => {
+  if (typeof ScoreboardUI !== "undefined" && ScoreboardUI.isOpen()) return;
   SFX.unlock();
   const rect = canvas.getBoundingClientRect();
   const cx = ((e.clientX - rect.left) / rect.width) * W;
@@ -54,6 +56,14 @@ window.addEventListener("mouseup", e => {
 });
 
 window.addEventListener("keydown", e => {
+  if (typeof ScoreboardUI !== "undefined" && ScoreboardUI.isOpen()) {
+    if (e.code === "Escape") {
+      e.preventDefault();
+      ScoreboardUI.close();
+    }
+    return;
+  }
+
   SFX.unlock();
   keys[e.code] = true;
 
