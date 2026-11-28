@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>Unbound Seekers — 無界尋寶錄</title>
@@ -42,7 +43,10 @@
       background: #f5f1e6;
       cursor: crosshair;
     }
-    /* Allow iOS/Android text input & touch scrolling inside the scoreboard modal */
+    /* Allow iOS/Android text input, taps & touch scrolling inside the scoreboard modal */
+    #ub-sb-overlay {
+      touch-action: auto;
+    }
     #ub-sb-overlay, #ub-sb-overlay * {
       user-select: auto;
       -webkit-user-select: auto;
@@ -62,7 +66,7 @@
   <script src="js/config.js"></script>
   <script>
     (function fitGameViewport() {
-      const targetRatio = (typeof DISPLAY_ASPECT_RATIO !== "undefined") ? DISPLAY_ASPECT_RATIO : (4 / 3);
+      const targetRatio = (typeof DISPLAY_ASPECT_RATIO !== "undefined") ? DISPLAY_ASPECT_RATIO : (984 / 621);
 
       function apply() {
         const vv = window.visualViewport;
