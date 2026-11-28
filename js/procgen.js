@@ -17,7 +17,8 @@ const ROOM_ARCHETYPES = [
   "ZIGZAG_ASCENT",
   "UNDERGROUND_BYPASS",
   "TWIN_SHAFTS",
-  "CATACOMB_BRIDGES"
+  "CATACOMB_BRIDGES",
+  "TOWER_DESCENT"
 ];
 
 function getCompoundAttackMultiplier(transitions) {
@@ -299,13 +300,6 @@ function isRoomPassable(room, params = PROCGEN_PARAMS) {
     );
   }
 
-  // Group nodes by surface for fast horizontal walk/jump-over scanning
-  const bySurface = new Map();
-  for (const n of nodes) {
-    if (!bySurface.has(n.sIdx)) bySurface.set(n.sIdx, []);
-    bySurface.get(n.sIdx).push(n);
-  }
-
   // Precompute ladder contacts for each node
   const ladders = room.ladders || [];
   const ladderNodes = ladders.map(() => []);
@@ -333,35 +327,7 @@ function isRoomPassable(room, params = PROCGEN_PARAMS) {
     const cur = queue[head++];
     if (reachesExit(cur)) return true;
 
-    // A) Horizontal walk & jumping over low tactical walls on the same surface
-    const sameSurf = bySurface.get(cur.sIdx) || [];
-    for (const nxt of sameSurf) {
-      if (visited[nxt.id]) continue;
-      const dx = Math.abs(nxt.x - cur.x);
-      if (dx === 0 || dx > maxJumpGap) continue;
-
-      // Check maximum wall height along the span [cur.x, nxt.x]
-      const minX = Math.min(cur.x, nxt.x);
-      const maxX = Math.max(cur.x, nxt.x);
-      let maxObstacle = 0;
-      for (let sx = minX; sx <= maxX; sx += stepX) {
-        const obs = getObstructionHeight(sx, cur.y);
-        if (obs > maxObstacle) maxObstacle = obs;
-      }
-
-      if (maxObstacle === 0 && dx <= stepX * 2) {
-        visited[nxt.id] = 1;
-        queue.push(nxt);
-      } else if (maxObstacle > 0 && maxObstacle <= maxJumpH) {
-        // Must have enough overhead clearance above the low wall to vault it
-        if (!isVerticallyBlocked(Math.round((minX + maxX) * 0.5), cur.y - maxObstacle - heroH, cur.y - maxObstacle, null)) {
-          visited[nxt.id] = 1;
-          queue.push(nxt);
-        }
-      }
-    }
-
-    // B) Ladder climb up / down to any connected floor in the ladder shaft
+    // A) Ladder climb up / down to any connected floor in the ladder shaft
     for (let li = 0; li < ladders.length; li++) {
       const l = ladders[li];
       if (
@@ -382,22 +348,47 @@ function isRoomPassable(room, params = PROCGEN_PARAMS) {
       }
     }
 
-    // C) Jumping up to nearby ledges / one-way platforms, or dropping down to lower floors
+    // B) All surface-to-surface transitions (same-tier walk/vault/gap-jump, jump up, drop down)
     for (const nxt of nodes) {
-      if (visited[nxt.id] || nxt.sIdx === cur.sIdx) continue;
+      if (visited[nxt.id]) continue;
       const dx = Math.abs(nxt.x - cur.x);
       if (dx > maxJumpGap) continue;
 
-      const dy = cur.y - nxt.y; // > 0 means jumping UP; < 0 means dropping DOWN
-      if (dy > 0 && dy <= maxJumpH) {
-        // Jumping up onto a platform or ledge
+      const dy = cur.y - nxt.y; // > 0 means jumping UP; < 0 means dropping DOWN; 0 means same level
+
+      if (Math.abs(dy) <= 4) {
+        // Same floor elevation (works across solid <-> oneWay hatch seams, low walls, and jumpable gaps)
+        const minX = Math.min(cur.x, nxt.x);
+        const maxX = Math.max(cur.x, nxt.x);
+        const floorY = Math.min(cur.y, nxt.y);
+        let maxObstacle = 0;
+        for (let sx = minX; sx <= maxX; sx += stepX) {
+          const obs = getObstructionHeight(sx, floorY);
+          if (obs > maxObstacle) maxObstacle = obs;
+        }
+
+        if (maxObstacle === 0) {
+          // Direct step across touching surfaces or horizontal jump across a gap <= maxJumpGap
+          if (dx <= stepX * 2 || !isVerticallyBlocked(Math.round((minX + maxX) * 0.5), floorY - heroH - 18, floorY - 4, null)) {
+            visited[nxt.id] = 1;
+            queue.push(nxt);
+          }
+        } else if (maxObstacle <= maxJumpH) {
+          // Vaulting over a low tactical cover wall (must have clear headroom above wall)
+          if (!isVerticallyBlocked(Math.round((minX + maxX) * 0.5), floorY - maxObstacle - heroH, floorY - maxObstacle, null)) {
+            visited[nxt.id] = 1;
+            queue.push(nxt);
+          }
+        }
+      } else if (dy > 4 && dy <= maxJumpH) {
+        // Jumping up onto a higher platform or ledge
         const midX = Math.round((cur.x + nxt.x) * 0.5);
         if (!isVerticallyBlocked(midX, nxt.y - heroH, cur.y - 4, null)) {
           visited[nxt.id] = 1;
           queue.push(nxt);
         }
-      } else if (dy < 0) {
-        // Dropping down through a one-way platform or stepping off a ledge
+      } else if (dy < -4) {
+        // Dropping down through a one-way platform/hatch or stepping off a ledge
         const canDrop = (cur.kind === "oneWay" && dx <= 24) || dx >= 16;
         if (canDrop) {
           const dropX = (cur.kind === "oneWay" && dx <= 24) ? cur.x : nxt.x;
@@ -652,8 +643,8 @@ function generateProceduralScreen(runSeed, stageIndex) {
         { x1: wall2X + 34, x2: innerR - 54, y: Y2 },
         { x1: innerL + 96, x2: innerR - 140, y: Y3 }
       );
-    } else {
-      // CATACOMB_BRIDGES: Solid islands + red jump-through/drop-through bridges + high-wall gate
+    } else if (archetype === "CATACOMB_BRIDGES") {
+      // Solid islands + red jump-through/drop-through bridges + high-wall gate
       const wall1X = snap4(randInt(460, 530));
       const leftLadX = snap4(randInt(200, 290));
       const rightLadX = snap4(randInt(690, 790));
@@ -683,6 +674,35 @@ function generateProceduralScreen(runSeed, stageIndex) {
         { x1: wall1X + 40, x2: innerR - 75, y: Y1 },
         { x1: 604, x2: innerR - 54, y: Y2 },
         { x1: 240, x2: 740, y: Y3 }
+      );
+    } else {
+      // TOWER_DESCENT: Start 3/F Left -> descend switchbacks through 2/F -> Exit 1/F Right
+      const lad32X = snap4(randInt(720, 820));
+      const lad21X = snap4(randInt(140, 240));
+      const wall3X = snap4(randInt(440, 560));
+      const wall2X = snap4(randInt(540, 660));
+
+      addShaftLadder(ladders, hatchMap, "Y3", Y3, Y2, lad32X);
+      addShaftLadder(ladders, hatchMap, "Y2", Y2, Y1, lad21X);
+
+      buildTierFloor(solids, oneWay, innerL, innerR, Y1, 34, []);
+      buildTierFloor(solids, oneWay, innerL + 36, innerR - 36, Y2, 18, hatchMap.Y2);
+      buildTierFloor(solids, oneWay, innerL, innerR - 36, Y3, 18, hatchMap.Y3);
+
+      // Non-jumpable divider on 2/F right of lower ladder so player must traverse left to descend
+      addHighDividerWall(solids, wall2X, Y2, 152);
+      // Low tactical cover walls on 3/F and 1/F
+      addLowCoverWall(solids, wall3X, Y3);
+      addLowCoverWall(solids, snap4(randInt(430, 560)), Y1);
+
+      spawn = { x: 54, y: Y3 - heroH };
+      exit = { x: innerR - 42, y: Y1 - 72, w: 36, h: 72, dir: "right" };
+
+      spawnZones.push(
+        { x1: 240, x2: wall3X - 14, y: Y3 },
+        { x1: wall3X + 32, x2: innerR - 60, y: Y3 },
+        { x1: innerL + 50, x2: wall2X - 14, y: Y2 },
+        { x1: 300, x2: innerR - 75, y: Y1 }
       );
     }
 
