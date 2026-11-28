@@ -450,9 +450,9 @@ function addLowCoverWall(solids, wallX, floorY, height = PROCGEN_PARAMS.lowWallH
 }
 
 // ============================================================================
-// MAIN PROCEDURAL GENERATOR (Totally Random From Floor 1 Onwards)
+// MAIN PROCEDURAL GENERATOR (Used for all intermediate floors after Room 1)
 // ============================================================================
-function generateProceduralScreen(runSeed, stageIndex = 0) {
+function generateProceduralScreen(runSeed, stageIndex = 1) {
   const heroH = (typeof hero !== "undefined" && hero.h) ? hero.h : 56;
   const worldW = W;        // 984
   const worldH = H;        // 621
@@ -469,7 +469,6 @@ function generateProceduralScreen(runSeed, stageIndex = 0) {
     ? (runSeed >>> 0)
     : ((Date.now() ^ Math.floor(Math.random() * 0xFFFFFFFF)) >>> 0);
 
-  // Mix stageIndex with non-zero salt so stageIndex = 0 (Floor 1) also gets full entropy
   const stageSalt = Math.imul((stageIndex + 1) >>> 0, 0x9E3779B1) >>> 0;
   const baseSeed = (seed ^ stageSalt) >>> 0;
   const baseRng = createSeededRng(baseSeed);
@@ -658,7 +657,7 @@ function generateProceduralScreen(runSeed, stageIndex = 0) {
       const lad32X = snap4(randInt(600, 690));
       const lad21X = snap4(randInt(140, 240));
       const wall3X = snap4(randInt(410, 520));
-      const wall2X = snap4(randInt(750, 845)); // Placed right of lad32X so 2/F left path stays open
+      const wall2X = snap4(randInt(750, 845)); // Right of lad32X so 2/F left path stays open
 
       addShaftLadder(ladders, hatchMap, "Y3", Y3, Y2, lad32X);
       addShaftLadder(ladders, hatchMap, "Y2", Y2, Y1, lad21X);
@@ -719,23 +718,6 @@ function generateProceduralScreen(runSeed, stageIndex = 0) {
       }
     }
 
-    // On Floor 1 (stageIndex === 0), preserve the entry special pickup (e.g. Hat Alien cannon) near spawn
-    if (stageIndex === 0 && typeof STAGE_001_DEFAULT !== "undefined") {
-      const startPickups = STAGE_001_DEFAULT.screens?.[0]?.pickups || [];
-      const entryItem = startPickups.find(p => p.type && p.type !== "crown" && p.type !== "chicken");
-      if (entryItem) {
-        const itemH = entryItem.h || 28;
-        pickups.push({
-          ...entryItem,
-          x: spawn.x + 64,
-          y: (spawn.y + heroH) - itemH,
-          w: entryItem.w || 28,
-          h: itemH,
-          collected: false
-        });
-      }
-    }
-
     // Every 10th room drops a healing chicken on the last enemy
     if (stageIndex > 0 && stageIndex % 10 === 0 && enemies.length > 0) {
       const hostEnemy = enemies[enemies.length - 1];
@@ -764,7 +746,7 @@ function generateProceduralScreen(runSeed, stageIndex = 0) {
 
     return {
       id: `random.${String(stageIndex).padStart(2, "0")}`,
-      roomType: stageIndex === 0 ? "START" : "RANDOM",
+      roomType: "RANDOM",
       archetype,
       bgTemplate,
       worldW,
@@ -805,7 +787,7 @@ function generateProceduralScreen(runSeed, stageIndex = 0) {
 
   return {
     id: `random.${String(stageIndex).padStart(2, "0")}`,
-    roomType: stageIndex === 0 ? "START" : "RANDOM",
+    roomType: "RANDOM",
     archetype: "DIVIDED_CITADEL",
     bgTemplate: ["bg001", "bg002", "bg003"][Math.floor(baseRng() * 3)],
     worldW,
