@@ -201,12 +201,10 @@ function isRoomPassable(room, params = PROCGEN_PARAMS) {
   const maxJumpGap = params.safeMaxJumpGap || 112;
   const stepX = 8;
 
-  // 1. Enforce minimum ladder height constraint
   for (const l of (room.ladders || [])) {
     if (l.h < minLadderH) return false;
   }
 
-  // 2. Collect all walkable surfaces (solid floor tops & one-way platforms)
   const surfaces = [];
   for (const s of (room.solids || [])) {
     if (s.w >= 28 && s.y > 44 && s.y < room.worldH) {
@@ -220,7 +218,6 @@ function isRoomPassable(room, params = PROCGEN_PARAMS) {
   }
   if (surfaces.length === 0) return false;
 
-  // Helper: returns height of any solid wall obstructing standing at (x, floorY), or 0 if clear
   function getObstructionHeight(x, floorY) {
     const left = x - heroW * 0.42;
     const right = x + heroW * 0.42;
@@ -228,11 +225,9 @@ function isRoomPassable(room, params = PROCGEN_PARAMS) {
 
     for (const s of (room.solids || [])) {
       if (right <= s.x + 1 || left >= s.x + s.w - 1) continue;
-      // Ceiling / overhead block above floorY
       if (s.y + s.h <= floorY && s.y + s.h > floorY - heroH + 4) {
-        return 999; // Headroom blocked
+        return 999;
       }
-      // Wall rising from or crossing floorY
       if (s.y < floorY - 2 && s.y + s.h >= floorY - 2) {
         const hAboveFloor = floorY - s.y;
         if (hAboveFloor > maxWallH) maxWallH = hAboveFloor;
@@ -241,7 +236,6 @@ function isRoomPassable(room, params = PROCGEN_PARAMS) {
     return maxWallH;
   }
 
-  // Helper: check if a solid slab blocks vertical movement between yTop and yBottom at x
   function isVerticallyBlocked(x, yTop, yBottom, ignoreLadderZone) {
     const left = x - heroW * 0.35;
     const right = x + heroW * 0.35;
@@ -258,7 +252,6 @@ function isRoomPassable(room, params = PROCGEN_PARAMS) {
     return false;
   }
 
-  // 3. Sample valid standing nodes across all walkable surfaces
   const nodes = [];
   surfaces.forEach((surf, sIdx) => {
     const startSample = Math.ceil((surf.x1 + 10) / stepX) * stepX;
@@ -271,7 +264,6 @@ function isRoomPassable(room, params = PROCGEN_PARAMS) {
   });
   if (nodes.length === 0) return false;
 
-  // Locate start node under spawn and check exit overlap
   const spawnCenterX = room.spawn.x + heroW * 0.5;
   const spawnFootY = room.spawn.y + heroH;
   let startNode = null;
@@ -300,7 +292,6 @@ function isRoomPassable(room, params = PROCGEN_PARAMS) {
     );
   }
 
-  // Precompute ladder contacts for each node
   const ladders = room.ladders || [];
   const ladderNodes = ladders.map(() => []);
   for (const n of nodes) {
@@ -317,7 +308,6 @@ function isRoomPassable(room, params = PROCGEN_PARAMS) {
     }
   }
 
-  // 4. BFS from startNode
   const visited = new Uint8Array(nodes.length);
   const queue = [startNode];
   visited[startNode.id] = 1;
@@ -327,7 +317,6 @@ function isRoomPassable(room, params = PROCGEN_PARAMS) {
     const cur = queue[head++];
     if (reachesExit(cur)) return true;
 
-    // A) Ladder climb up / down to any connected floor in the ladder shaft
     for (let li = 0; li < ladders.length; li++) {
       const l = ladders[li];
       if (
@@ -348,16 +337,14 @@ function isRoomPassable(room, params = PROCGEN_PARAMS) {
       }
     }
 
-    // B) All surface-to-surface transitions (same-tier walk/vault/gap-jump, jump up, drop down)
     for (const nxt of nodes) {
       if (visited[nxt.id]) continue;
       const dx = Math.abs(nxt.x - cur.x);
       if (dx > maxJumpGap) continue;
 
-      const dy = cur.y - nxt.y; // > 0 means jumping UP; < 0 means dropping DOWN; 0 means same level
+      const dy = cur.y - nxt.y;
 
       if (Math.abs(dy) <= 4) {
-        // Same floor elevation (works across solid <-> oneWay hatch seams, low walls, and jumpable gaps)
         const minX = Math.min(cur.x, nxt.x);
         const maxX = Math.max(cur.x, nxt.x);
         const floorY = Math.min(cur.y, nxt.y);
@@ -368,27 +355,23 @@ function isRoomPassable(room, params = PROCGEN_PARAMS) {
         }
 
         if (maxObstacle === 0) {
-          // Direct step across touching surfaces or horizontal jump across a gap <= maxJumpGap
           if (dx <= stepX * 2 || !isVerticallyBlocked(Math.round((minX + maxX) * 0.5), floorY - heroH - 18, floorY - 4, null)) {
             visited[nxt.id] = 1;
             queue.push(nxt);
           }
         } else if (maxObstacle <= maxJumpH) {
-          // Vaulting over a low tactical cover wall (must have clear headroom above wall)
           if (!isVerticallyBlocked(Math.round((minX + maxX) * 0.5), floorY - maxObstacle - heroH, floorY - maxObstacle, null)) {
             visited[nxt.id] = 1;
             queue.push(nxt);
           }
         }
       } else if (dy > 4 && dy <= maxJumpH) {
-        // Jumping up onto a higher platform or ledge
         const midX = Math.round((cur.x + nxt.x) * 0.5);
         if (!isVerticallyBlocked(midX, nxt.y - heroH, cur.y - 4, null)) {
           visited[nxt.id] = 1;
           queue.push(nxt);
         }
       } else if (dy < -4) {
-        // Dropping down through a one-way platform/hatch or stepping off a ledge
         const canDrop = (cur.kind === "oneWay" && dx <= 24) || dx >= 16;
         if (canDrop) {
           const dropX = (cur.kind === "oneWay" && dx <= 24) ? cur.x : nxt.x;
@@ -467,9 +450,9 @@ function addLowCoverWall(solids, wallX, floorY, height = PROCGEN_PARAMS.lowWallH
 }
 
 // ============================================================================
-// MAIN PROCEDURAL GENERATOR (Seeded Archetypes + Guaranteed Pathability)
+// MAIN PROCEDURAL GENERATOR (Totally Random From Floor 1 Onwards)
 // ============================================================================
-function generateProceduralScreen(runSeed, stageIndex) {
+function generateProceduralScreen(runSeed, stageIndex = 0) {
   const heroH = (typeof hero !== "undefined" && hero.h) ? hero.h : 56;
   const worldW = W;        // 984
   const worldH = H;        // 621
@@ -482,19 +465,29 @@ function generateProceduralScreen(runSeed, stageIndex) {
   const Y2 = 407;         // 407 (2/F Middle Floor, 180px above 1/F)
   const Y3 = 227;         // 227 (3/F Top Floor, 180px above 2/F)
 
-  const baseSeed = (runSeed ^ Math.imul(stageIndex, 0x9E3779B1)) >>> 0;
+  const seed = (typeof runSeed === "number" && Number.isFinite(runSeed))
+    ? (runSeed >>> 0)
+    : ((Date.now() ^ Math.floor(Math.random() * 0xFFFFFFFF)) >>> 0);
+
+  // Mix stageIndex with non-zero salt so stageIndex = 0 (Floor 1) also gets full entropy
+  const stageSalt = Math.imul((stageIndex + 1) >>> 0, 0x9E3779B1) >>> 0;
+  const baseSeed = (seed ^ stageSalt) >>> 0;
   const baseRng = createSeededRng(baseSeed);
 
-  // Rotate archetypes deterministically while still allowing seed variation
-  const startArchIdx = (stageIndex + Math.floor(baseRng() * ROOM_ARCHETYPES.length)) % ROOM_ARCHETYPES.length;
+  // Randomize archetype order independently on every floor
+  const archOrder = [...ROOM_ARCHETYPES];
+  for (let i = archOrder.length - 1; i > 0; i--) {
+    const j = Math.floor(baseRng() * (i + 1));
+    [archOrder[i], archOrder[j]] = [archOrder[j], archOrder[i]];
+  }
 
   function buildCandidate(attempt) {
-    const attemptSeed = (baseSeed + Math.imul(attempt, 0x85EBCA6B)) >>> 0;
+    const attemptSeed = (baseSeed + Math.imul(attempt + 1, 0x85EBCA6B)) >>> 0;
     const rng = createSeededRng(attemptSeed);
     const randInt = (min, max) => Math.floor(rng() * (max - min + 1)) + min;
     const snap4 = (val) => Math.round(val / 4) * 4;
 
-    const archetype = ROOM_ARCHETYPES[(startArchIdx + attempt) % ROOM_ARCHETYPES.length];
+    const archetype = archOrder[attempt % archOrder.length];
 
     const solids = [
       { x: 0, y: 0, w: worldW, h: 28 },
@@ -506,13 +499,12 @@ function generateProceduralScreen(runSeed, stageIndex) {
     const pickups = [];
     const enemies = [];
     const hatchMap = { Y2: [], Y3: [] };
-    const spawnZones = []; // { x1, x2, y }
+    const spawnZones = [];
 
     let spawn = { x: 54, y: Y1 - heroH };
     let exit = { x: innerR - 42, y: Y1 - 72, w: 36, h: 72, dir: "right" };
 
     if (archetype === "DIVIDED_CITADEL") {
-      // Non-jumpable high wall splits 1/F in the center; must ladder up to 2/F, cross over, and ladder down
       const wallX = snap4(randInt(444, 520));
       const leftLadderX = snap4(randInt(210, 320));
       const rightLadderX = snap4(randInt(640, 760));
@@ -529,10 +521,8 @@ function generateProceduralScreen(runSeed, stageIndex) {
       buildTierFloor(solids, oneWay, innerL + 48, innerR - 48, Y2, 18, hatchMap.Y2);
       buildTierFloor(solids, oneWay, 240, 744, Y3, 18, hatchMap.Y3);
 
-      // Central non-jumpable high wall on 1/F
       addHighDividerWall(solids, wallX, Y1, highH);
 
-      // Low tactical cover walls to separate enemy groups
       const cover2X = snap4(randInt(370, 580));
       addLowCoverWall(solids, cover2X, Y2);
       const cover1RightX = snap4(randInt(wallX + 90, rightLadderX - 60));
@@ -551,7 +541,6 @@ function generateProceduralScreen(runSeed, stageIndex) {
         { x1: 260, x2: 724, y: Y3 }
       );
     } else if (archetype === "ZIGZAG_ASCENT") {
-      // Staircase climb: Start 1/F Left -> Ladder Right to 2/F -> Cross Left -> Ladder Left to 3/F -> Exit 3/F Right
       const lad12X = snap4(randInt(740, 845));
       const lad23X = snap4(randInt(130, 235));
       const wall2X = snap4(randInt(540, 660));
@@ -564,9 +553,7 @@ function generateProceduralScreen(runSeed, stageIndex) {
       buildTierFloor(solids, oneWay, innerL + 36, innerR - 36, Y2, 18, hatchMap.Y2);
       buildTierFloor(solids, oneWay, innerL + 36, innerR, Y3, 18, hatchMap.Y3);
 
-      // Non-jumpable divider on 2/F right of ladder so player must traverse left to reach 3/F shaft
       addHighDividerWall(solids, wall2X, Y2, 152);
-      // Low cover walls on 1/F and 3/F to split enemy charges
       addLowCoverWall(solids, wall1X, Y1);
       addLowCoverWall(solids, snap4(randInt(460, 620)), Y3);
 
@@ -579,7 +566,6 @@ function generateProceduralScreen(runSeed, stageIndex) {
         { x1: 310, x2: innerR - 75, y: Y3 }
       );
     } else if (archetype === "UNDERGROUND_BYPASS") {
-      // Spawn 2/F Left & Exit 2/F Right, but a non-jumpable high wall seals the center of 2/F -> drop/ladder to 1/F & climb back
       const wall2X = snap4(randInt(440, 520));
       const leftDropX = snap4(randInt(230, 340));
       const rightClimbX = snap4(randInt(640, 760));
@@ -591,15 +577,12 @@ function generateProceduralScreen(runSeed, stageIndex) {
       buildTierFloor(solids, oneWay, innerL, innerR, Y1, 34, []);
       buildTierFloor(solids, oneWay, innerL, innerR, Y2, 18, hatchMap.Y2);
 
-      // Optional upper catwalk on 3/F
       if (rng() < 0.65) {
         addShaftLadder(ladders, hatchMap, "Y3", Y3, Y2, snap4(randInt(220, 330)));
         buildTierFloor(solids, oneWay, 170, 520, Y3, 18, hatchMap.Y3);
       }
 
-      // Non-jumpable wall blocking 2/F center
       addHighDividerWall(solids, wall2X, Y2, 154);
-      // Low cover wall on 1/F splitting the underground enemy squad
       addLowCoverWall(solids, low1X, Y1);
 
       spawn = { x: 54, y: Y2 - heroH };
@@ -611,7 +594,6 @@ function generateProceduralScreen(runSeed, stageIndex) {
         { x1: wall2X + 34, x2: innerR - 75, y: Y2 }
       );
     } else if (archetype === "TWIN_SHAFTS") {
-      // Three full aligned floors with staggered shafts + alternating non-jumpable divider walls
       const leftShaftX = snap4(randInt(220, 320));
       const rightShaftX = snap4(randInt(650, 760));
       const midShaftX = snap4(randInt(450, 520));
@@ -626,7 +608,6 @@ function generateProceduralScreen(runSeed, stageIndex) {
       buildTierFloor(solids, oneWay, innerL + 40, innerR - 40, Y2, 18, hatchMap.Y2);
       buildTierFloor(solids, oneWay, innerL + 80, innerR - 80, Y3, 18, hatchMap.Y3);
 
-      // Non-jumpable divider on 1/F + low cover walls on 2/F & 3/F
       addHighDividerWall(solids, wall1X, Y1, 160);
       addLowCoverWall(solids, wall2X, Y2);
       addLowCoverWall(solids, snap4(randInt(540, 660)), Y3);
@@ -644,7 +625,6 @@ function generateProceduralScreen(runSeed, stageIndex) {
         { x1: innerL + 96, x2: innerR - 140, y: Y3 }
       );
     } else if (archetype === "CATACOMB_BRIDGES") {
-      // Solid islands + red jump-through/drop-through bridges + high-wall gate
       const wall1X = snap4(randInt(460, 530));
       const leftLadX = snap4(randInt(200, 290));
       const rightLadX = snap4(randInt(690, 790));
@@ -653,12 +633,10 @@ function generateProceduralScreen(runSeed, stageIndex) {
       addShaftLadder(ladders, hatchMap, "Y2", Y2, Y1, rightLadX);
 
       buildTierFloor(solids, oneWay, innerL, innerR, Y1, 34, []);
-      // Left and right solid decks on 2/F joined by a wide red oneWay bridge in the center
       buildTierFloor(solids, oneWay, innerL + 40, 390, Y2, 18, hatchMap.Y2);
       buildTierFloor(solids, oneWay, 594, innerR - 40, Y2, 18, hatchMap.Y2);
       oneWay.push({ x: 390, y: Y2, w: 204, h: 10 });
 
-      // Upper 3/F lookout platforms linked by a red bridge
       buildTierFloor(solids, oneWay, 220, 420, Y3, 18, []);
       buildTierFloor(solids, oneWay, 564, 764, Y3, 18, []);
       oneWay.push({ x: 420, y: Y3, w: 144, h: 10 });
@@ -677,10 +655,10 @@ function generateProceduralScreen(runSeed, stageIndex) {
       );
     } else {
       // TOWER_DESCENT: Start 3/F Left -> descend switchbacks through 2/F -> Exit 1/F Right
-      const lad32X = snap4(randInt(720, 820));
+      const lad32X = snap4(randInt(600, 690));
       const lad21X = snap4(randInt(140, 240));
-      const wall3X = snap4(randInt(440, 560));
-      const wall2X = snap4(randInt(540, 660));
+      const wall3X = snap4(randInt(410, 520));
+      const wall2X = snap4(randInt(750, 845)); // Placed right of lad32X so 2/F left path stays open
 
       addShaftLadder(ladders, hatchMap, "Y3", Y3, Y2, lad32X);
       addShaftLadder(ladders, hatchMap, "Y2", Y2, Y1, lad21X);
@@ -689,9 +667,7 @@ function generateProceduralScreen(runSeed, stageIndex) {
       buildTierFloor(solids, oneWay, innerL + 36, innerR - 36, Y2, 18, hatchMap.Y2);
       buildTierFloor(solids, oneWay, innerL, innerR - 36, Y3, 18, hatchMap.Y3);
 
-      // Non-jumpable divider on 2/F right of lower ladder so player must traverse left to descend
       addHighDividerWall(solids, wall2X, Y2, 152);
-      // Low tactical cover walls on 3/F and 1/F
       addLowCoverWall(solids, wall3X, Y3);
       addLowCoverWall(solids, snap4(randInt(430, 560)), Y1);
 
@@ -699,19 +675,18 @@ function generateProceduralScreen(runSeed, stageIndex) {
       exit = { x: innerR - 42, y: Y1 - 72, w: 36, h: 72, dir: "right" };
 
       spawnZones.push(
-        { x1: 240, x2: wall3X - 14, y: Y3 },
+        { x1: 230, x2: wall3X - 14, y: Y3 },
         { x1: wall3X + 32, x2: innerR - 60, y: Y3 },
-        { x1: innerL + 50, x2: wall2X - 14, y: Y2 },
+        { x1: innerL + 50, x2: lad32X - 56, y: Y2 },
         { x1: 300, x2: innerR - 75, y: Y1 }
       );
     }
 
-    // Populate enemies cleanly inside valid bounded floor zones (never overlapping spawn or clipping walls)
+    // Populate enemies cleanly inside valid bounded floor zones
     const maxRoomEnemies = Math.min(10, 3 + Math.floor(stageIndex * 0.65));
     const giantChance = Math.min(0.32, 0.14 + stageIndex * 0.015);
     const kniferChance = 0.40;
 
-    // Shuffle spawn zones
     for (let i = spawnZones.length - 1; i > 0; i--) {
       const j = Math.floor(rng() * (i + 1));
       [spawnZones[i], spawnZones[j]] = [spawnZones[j], spawnZones[i]];
@@ -744,6 +719,23 @@ function generateProceduralScreen(runSeed, stageIndex) {
       }
     }
 
+    // On Floor 1 (stageIndex === 0), preserve the entry special pickup (e.g. Hat Alien cannon) near spawn
+    if (stageIndex === 0 && typeof STAGE_001_DEFAULT !== "undefined") {
+      const startPickups = STAGE_001_DEFAULT.screens?.[0]?.pickups || [];
+      const entryItem = startPickups.find(p => p.type && p.type !== "crown" && p.type !== "chicken");
+      if (entryItem) {
+        const itemH = entryItem.h || 28;
+        pickups.push({
+          ...entryItem,
+          x: spawn.x + 64,
+          y: (spawn.y + heroH) - itemH,
+          w: entryItem.w || 28,
+          h: itemH,
+          collected: false
+        });
+      }
+    }
+
     // Every 10th room drops a healing chicken on the last enemy
     if (stageIndex > 0 && stageIndex % 10 === 0 && enemies.length > 0) {
       const hostEnemy = enemies[enemies.length - 1];
@@ -757,21 +749,22 @@ function generateProceduralScreen(runSeed, stageIndex) {
       });
     }
 
-    // Place 1–2 score crowns on elevated tiers
+    // Place 1–2 score crowns on random tiers
     const crownTiers = [Y2, Y3, Y1];
     const numCrowns = randInt(1, 2);
     for (let p = 0; p < numCrowns; p++) {
-      const tierY = crownTiers[(p + stageIndex) % crownTiers.length];
+      const tierY = crownTiers[randInt(0, crownTiers.length - 1)];
       const px = snap4(randInt(200, 780));
       pickups.push({ type: "crown", x: px, y: tierY - 30, w: 28, h: 26, collected: false });
     }
 
+    // Fully random background selection on every floor
     const bgPool = ["bg001", "bg002", "bg003"];
-    const bgTemplate = bgPool[(stageIndex + randInt(0, 1)) % bgPool.length];
+    const bgTemplate = bgPool[randInt(0, bgPool.length - 1)];
 
     return {
       id: `random.${String(stageIndex).padStart(2, "0")}`,
-      roomType: "RANDOM",
+      roomType: stageIndex === 0 ? "START" : "RANDOM",
       archetype,
       bgTemplate,
       worldW,
@@ -788,7 +781,6 @@ function generateProceduralScreen(runSeed, stageIndex) {
     };
   }
 
-  // Generate and verify passability; retry with shifted seed if any layout fails validation
   for (let attempt = 0; attempt < PROCGEN_PARAMS.maxValidationAttempts; attempt++) {
     const candidate = buildCandidate(attempt);
     if (isRoomPassable(candidate, PROCGEN_PARAMS)) {
@@ -813,9 +805,9 @@ function generateProceduralScreen(runSeed, stageIndex) {
 
   return {
     id: `random.${String(stageIndex).padStart(2, "0")}`,
-    roomType: "RANDOM",
+    roomType: stageIndex === 0 ? "START" : "RANDOM",
     archetype: "DIVIDED_CITADEL",
-    bgTemplate: ["bg001", "bg002", "bg003"][stageIndex % 3],
+    bgTemplate: ["bg001", "bg002", "bg003"][Math.floor(baseRng() * 3)],
     worldW,
     worldH,
     pageLeft: stageIndex * 2 + 1,
@@ -835,11 +827,8 @@ function generateProceduralScreen(runSeed, stageIndex) {
 
 function generateBossScreen(transitions) {
   const floorBaseY = H - 34; // 587
-  // Low-to-mid stepping-stone red platforms (66px & 94px above ground):
-  // High enough to vault over the 138px boss (head at y=449),
-  // but low enough that the boss stays aggroed and his axe swing (y=471..581) still threatens stationary campers.
-  const outerPlatY = floorBaseY - 66; // 521 (single-jump reachable directly from floor)
-  const innerPlatY = floorBaseY - 94; // 493 (28px step-up from outer platforms)
+  const outerPlatY = floorBaseY - 66; // 521
+  const innerPlatY = floorBaseY - 94; // 493
 
   return {
     id: "boss_chamber",
@@ -865,10 +854,10 @@ function generateBossScreen(transitions) {
       { x: W - 24, y: 0, w: 24, h: H }
     ],
     oneWay: [
-      { x: 165, y: outerPlatY, w: 112, h: 12 }, // Left step-up
-      { x: 345, y: innerPlatY, w: 112, h: 12 }, // Center-left vault
-      { x: 527, y: innerPlatY, w: 112, h: 12 }, // Center-right vault
-      { x: 707, y: outerPlatY, w: 112, h: 12 }  // Right step-up
+      { x: 165, y: outerPlatY, w: 112, h: 12 },
+      { x: 345, y: innerPlatY, w: 112, h: 12 },
+      { x: 527, y: innerPlatY, w: 112, h: 12 },
+      { x: 707, y: outerPlatY, w: 112, h: 12 }
     ],
     ladders: [],
     pickups: [
