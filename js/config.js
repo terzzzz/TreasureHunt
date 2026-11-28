@@ -8,7 +8,7 @@ const SCALE = 3;
 const W = 328 * SCALE;        // 984 px logical width
 const H = 207 * SCALE;        // 621 px logical height
 const HALF_W = W / 2;         // 492 px
-const DISPLAY_ASPECT_RATIO = 4 / 3; // Narrower display aspect so portrait mode scales larger
+const DISPLAY_ASPECT_RATIO = W / H; // Exact 984 / 621 (328:207) native aspect ratio
 const FPS = 60;
 const DT = 1 / FPS;
 
