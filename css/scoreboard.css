@@ -1,0 +1,188 @@
+/* css/scoreboard.css — Scoreboard Outline & Fixed Column Widths */
+#ub-sb-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(15, 23, 42, 0.85);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  font-family: "Courier New", Consolas, monospace;
+  color: #f8fafc;
+}
+
+#ub-sb-card {
+  width: min(900px, 96vw);
+  height: min(550px, 90vh);
+  background: #1e293b;
+  border: 2px solid #facc15;
+  border-radius: 6px;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.65);
+  display: flex;
+  flex-direction: column;
+  padding: 14px 16px;
+  box-sizing: border-box;
+  gap: 10px;
+}
+
+/* Zone 1: Header */
+#ub-sb-header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+#ub-sb-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.ub-sb-select {
+  background: #0f172a;
+  color: #facc15;
+  border: 1px solid #475569;
+  padding: 5px 8px;
+  font-family: inherit;
+  font-size: 13px;
+  border-radius: 4px;
+}
+
+#ub-sb-close {
+  background: #dc2626;
+  color: #ffffff;
+  border: none;
+  padding: 6px 12px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: bold;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+/* Zone 2: Victory Submission Strip */
+#ub-sb-submit-box {
+  background: #0f172a;
+  border: 1px solid #facc15;
+  border-radius: 4px;
+  padding: 8px 10px;
+  display: none;
+  flex-direction: column;
+  gap: 6px;
+}
+
+#ub-sb-run-summary {
+  font-size: 12px;
+  color: #e2e8f0;
+}
+
+#ub-sb-submit-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+#ub-sb-name-input {
+  width: 132px;
+  background: #1e293b;
+  color: #ffffff;
+  border: 1px solid #facc15;
+  border-radius: 3px;
+  padding: 5px 8px;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: bold;
+}
+
+#ub-sb-submit-btn {
+  background: #16a34a;
+  color: #ffffff;
+  border: none;
+  border-radius: 3px;
+  padding: 6px 14px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+#ub-sb-submit-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Zone 3: Scrollable Table Container */
+#ub-sb-scroll {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: auto;
+  border: 1px solid #334155;
+  background: #0f172a;
+}
+
+#ub-sb-table {
+  width: 812px;
+  min-width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+#ub-sb-table th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #334155;
+  color: #facc15;
+  padding: 7px 6px;
+  border-bottom: 1px solid #475569;
+  white-space: nowrap;
+}
+
+#ub-sb-table td {
+  padding: 6px 6px;
+  border-bottom: 1px solid #1e293b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Exact Column Widths & Alignments */
+#ub-sb-table .col-rank  { width: 64px;  text-align: left; }
+#ub-sb-table .col-name  { width: 125px; text-align: left; font-weight: bold; }
+#ub-sb-table .col-score { width: 120px; text-align: right; color: #fde047; }
+#ub-sb-table .col-floor { width: 76px;  text-align: center; }
+#ub-sb-table .col-os    { width: 96px;  text-align: center; color: #cbd5e1; }
+#ub-sb-table .col-site  { width: 96px;  text-align: center; color: #38bdf8; }
+#ub-sb-table .col-time  { width: 235px; text-align: right; color: #94a3b8; }
+
+#ub-sb-table tr:nth-child(even) { background: rgba(30, 41, 59, 0.45); }
+#ub-sb-table tr.ub-me {
+  background: rgba(250, 204, 21, 0.22);
+  color: #fef08a;
+  font-weight: bold;
+}
+
+/* Zone 4: Footer Bar */
+#ub-sb-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+#ub-sb-top-btn {
+  background: #334155;
+  color: #f8fafc;
+  border: 1px solid #475569;
+  border-radius: 3px;
+  padding: 3px 8px;
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
