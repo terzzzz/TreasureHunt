@@ -284,6 +284,7 @@ function drawIntroCrawlScreen() {
 }
 
 window.addEventListener("keydown", (e) => {
+  if (typeof ScoreboardUI !== "undefined" && ScoreboardUI.isOpen()) return;
   if (typeof game === "undefined" || game.state !== "SELECT" || typeof setup === "undefined") return;
   if (setup.showIntroScreen === false) return;
   if (["Shift", "Control", "Alt", "Meta"].includes(e.key)) return;
